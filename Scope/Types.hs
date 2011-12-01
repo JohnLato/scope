@@ -70,7 +70,6 @@ import Data.Iteratee (Enumeratee)
 import Data.ZoomCache
 
 import qualified Graphics.Rendering.Cairo as C
-import qualified Graphics.UI.Gtk as G
 
 ----------------------------------------------------------------------
 
@@ -170,9 +169,13 @@ data Scope = Scope
     , layers :: [ScopeLayer]
     }
 
+-- temporary
+data DrawingArea = DA
+data Adjustment  = A
+
 data View = View
-    { canvas :: G.DrawingArea
-    , adj    :: G.Adjustment
+    { canvas :: DrawingArea
+    , adj    :: Adjustment
     , viewX1 :: DataX
     , viewY1 :: Double
     , viewX2 :: DataX
@@ -180,13 +183,13 @@ data View = View
     , dragDX :: Maybe DataX -- DataX of pointer at drag down
     }
 
-scopeNew :: G.DrawingArea -> G.Adjustment -> Scope
+scopeNew :: DrawingArea -> Adjustment -> Scope
 scopeNew c adj = Scope {
       view = viewInit c adj
     , layers = []
     }
 
-viewInit :: G.DrawingArea -> G.Adjustment -> View
+viewInit :: DrawingArea -> Adjustment -> View
 viewInit c adj = View c adj (DataX 0.0) (-1.0) (DataX 1.0) 1.0 Nothing
 
 ----------------------------------------------------------------------

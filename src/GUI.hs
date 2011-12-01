@@ -27,7 +27,7 @@ import Data.List (groupBy)
 import Data.Maybe
 import qualified Data.Iteratee as I
 import Data.ZoomCache.Numeric
-import qualified Graphics.UI.Gtk as G
+-- import qualified Graphics.UI.Gtk as G
 import qualified Graphics.Rendering.Cairo as C
 import Graphics.Rendering.Cairo.Internal (Render(..))
 import Graphics.Rendering.Cairo.Types (Cairo)
