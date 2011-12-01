@@ -54,6 +54,13 @@ Data-Files:
 flag splitBase
   description: Use the split-up base package.
 
+flag cocoa
+  description: native cocoa backend
+  default: False
+
+flag gtk
+  description: gtk backend
+
 Library
   if flag(splitBase)
     build-depends:
@@ -62,9 +69,15 @@ Library
     build-depends:
       base < 3
 
+  if flag(cocoa)
+    build-depends: lrw-cocoa
+
+  if flag(gtk)
+    build-depends: lrw-gtk
+
   Build-Depends:
     cairo,
-    gtk,
+    lrw,
     iteratee                  >= 0.8.6.0 && < 0.9,
     MonadCatchIO-transformers >  0.2     && < 0.3,
     mtl                       >= 2.0.0.0 && < 3,
@@ -74,13 +87,19 @@ Library
     Scope.View
     Scope.Types
 
-Executable scope
+Executable scope-lrw
   if flag(splitBase)
     build-depends:
       base >= 3 && < 6
   else
     build-depends:
       base < 3
+
+  if flag(cocoa)
+    build-depends: lrw-cocoa
+
+  if flag(gtk)
+    build-depends: lrw-gtk
 
   Main-Is:             main.hs
   Other-Modules:       Children
@@ -89,8 +108,7 @@ Executable scope
   Build-Depends:
     cairo,
     containers                >= 0.2     && < 0.5,
-    glib,
-    gtk,
+    lrw,
     iteratee                  >= 0.8.6.0 && < 0.9,
     MonadCatchIO-transformers >  0.2     && < 0.3,
     mtl                       >= 2.0.0.0 && < 3,
@@ -102,4 +120,4 @@ Executable scope
 --
 source-repository head
   type: git
-  location: git://github.com/kfish/scope.git
+  location: git://github.com/JohnLato/scope.git
