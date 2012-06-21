@@ -1,11 +1,16 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS -Wall -fno-warn-orphans #-}
 ----------------------------------------------------------------------
 {- |
@@ -49,84 +54,110 @@ module Scope.Types (
     , DataX(..)
     , DataY(..)
 
-    , Transform(..)
-    , mkTransform
-    , mkTSDataTransform
+    , ScreenV
+    , CanvasV
+    , DataV
+    , ScreenP
+    , CanvasP
+    , DataP
 
-    , unionBounds
+    , Transform(..)
+    -- , mkTransform
+    -- , mkTSDataTransform
+
     , translateRange
+    , unionBounds'm
     , unionRange
     , restrictRange
     , restrictRange01
     , zoomRange
+    , viewRange
 
+    , extentX
+    , extentY
+
+    -- * Data Sources
+    , Source (..)
+    , Scaling (..)
+    , Hint (..)
+
+    -- * Drawings
+    , Plot (..)
+    , PlotInfo (..)
+    , Layer (..)
+    , emptyPlot
+    , mapPlot
+    , emptyPlotInfo
+    
     -- * Drawing commands
-    , RGB
-    , DrawCmd(..)
-    , DrawLayer
-    , ScopeRender(..)
+    , Renderer (..)
+    , Tick (..)
 
-    , ScopePlot(..)
-
-    , ReadMethods(..)
-    , ScopeRead(..)
 
     -- * Scope
-    , ScopeFile(..)
+    -- , ScopeFile(..)
     , Scope(..)
-    , scopeNew
-    , scopeClose
-    , scopeUpdate
+    -- , scopeNew
+    -- , scopeClose
+    -- , scopeUpdate
     , scopeModifyView
 
     -- * Views
     , View(..)
 
     -- * Layers
-    , Layer(..)
-    , LayerExtents(..)
-    , LayerPlot(..)
-    , LayerMapFunc
-    , LayerFoldFunc
-    , ScopeLayer(..)
+    -- , Layer(..)
+    -- , LayerExtents(..)
+    -- , LayerPlot(..)
+    -- , LayerMapFunc
+    -- , LayerFoldFunc
+    -- , ScopeLayer(..)
+    -- * Reexports
+    , module V
 ) where
 
-import Control.Applicative ((<$>))
-import Control.Monad.CatchIO
-import Control.Monad.Trans (MonadIO)
-import Data.Iteratee (Iteratee, Enumeratee)
-import Data.List (nub)
-import Data.Offset
-import Data.Maybe
-import Data.RangeSpace ( Range, AffineSpace(..), AdditiveGroup(..), VectorSpace(..)
-                       , HasBasis(..), translateRange, unionRange, range, rangeStart
-                       , maskRange, toBounds, fromBounds)
+import Control.Applicative (Applicative(..), (<$>))
+import Control.Arrow (first, (***))
+
+import Data.List (zipWith4)
+import Data.Data (Data, Typeable)
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.Time.Clock
-import Data.ZoomCache
-import System.Posix
+
+import qualified Data.Vector.Unboxed as U
+
+import Diagrams.Prelude hiding (view,translate,transform, extentX, extentY)
+import qualified Diagrams.Prelude as D
+import Data.Basis             as V
+import Data.RangeSpace        as V
+import Data.VectorSpace       as V
+import Data.AffineSpace       as V
+import Data.AffineSpace.Point as V
 
 ----------------------------------------------------------------------
 
 data Transform a = Transform { m :: Double, b :: a }
 
+-- this might disappear?
 class Coordinate a where
     fromDouble :: Double -> a
-    toDouble :: a -> Double
-
-    -- | Distance from to
-    distance :: a -> a -> a
-    -- | Translate x by
-    translate :: a -> a -> a
+    translate :: a -> Diff a -> a
 
     transform :: Transform a -> a -> a
 
-newtype ScreenX = ScreenX Double deriving (Eq, Ord, Show, Num)
-newtype ScreenY = ScreenY Double deriving (Eq, Ord, Show, Num)
-newtype CanvasX = CanvasX Double deriving (Eq, Ord, Show, Num)
-newtype CanvasY = CanvasY Double deriving (Eq, Ord, Show, Num)
-newtype DataX   = DataX   Double deriving (Eq, Ord, Show, Num)
-newtype DataY   = DataY   Double deriving (Eq, Ord, Show, Num)
-
+newtype ScreenX = ScreenX Double
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
+newtype ScreenY = ScreenY Double
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
+newtype CanvasX = CanvasX Double
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
+newtype CanvasY = CanvasY Double
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
+newtype DataX   = DataX { unDataX :: Double }
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
+newtype DataY   = DataY { unDataY :: Double }
+    deriving (Num, Fractional, Floating, Eq, Ord, Show, Data, Typeable)
 
 deriving instance AdditiveGroup ScreenX
 deriving instance AdditiveGroup ScreenY
@@ -179,11 +210,6 @@ instance AffineSpace NominalDiffTime where
     type Diff NominalDiffTime = NominalDiffTime
     (.-.) = (-)
     (.+^) = (+)
-
-instance AffineSpace TimeStamp where
-    type Diff TimeStamp = Double
-    l .-. r  = toDouble l - toDouble r
-    l .+^ r  = fromDouble (toDouble l + fromDouble r)
 
 instance VectorSpace ScreenX where
     type Scalar ScreenX = Double
@@ -260,60 +286,48 @@ instance HasBasis NominalDiffTime where
     decompose dtime = [((), realToFrac dtime)]
     decompose' dtime () = realToFrac dtime
 
+type ScreenV = D2V ScreenX ScreenY
+type CanvasV = D2V CanvasX CanvasY
+type DataV   = D2V DataX DataY
+
+type ScreenP = Point ScreenV
+type CanvasP = Point CanvasV
+type DataP   = Point DataV
+
 instance Coordinate Double where
     fromDouble = id
-    toDouble = id
-    distance x1 x2 = x2 - x1
     translate t x = x + t
     transform Transform{..} x = m * x + b
 
 instance Coordinate ScreenX where
-    fromDouble d = ScreenX d
-    toDouble (ScreenX d) = d
-    distance (ScreenX x1) (ScreenX x2) = ScreenX (distance x1 x2)
+    fromDouble = ScreenX
     translate (ScreenX t) (ScreenX x)  = ScreenX (translate t x)
-    transform (Transform m (ScreenX b)) (ScreenX x) = ScreenX (transform (Transform m b) x)
+    transform (Transform m (ScreenX b)) (ScreenX x) =
+        ScreenX (transform (Transform m b) x)
 
 instance Coordinate CanvasX where
-    fromDouble d = CanvasX d
-    toDouble (CanvasX d) = d
-    distance (CanvasX x1) (CanvasX x2) = CanvasX (distance x1 x2)
+    fromDouble = CanvasX
     translate (CanvasX t) (CanvasX x)  = CanvasX (translate t x)
-    transform (Transform m (CanvasX b)) (CanvasX x) = CanvasX (transform (Transform m b) x)
+    transform (Transform m (CanvasX b)) (CanvasX x) =
+        CanvasX (transform (Transform m b) x)
 
 instance Coordinate DataX where
-    fromDouble d = DataX d
-    toDouble (DataX d) = d
-    distance (DataX x1) (DataX x2) = DataX (distance x1 x2)
+    fromDouble = DataX
     translate (DataX t) (DataX x)  = DataX (translate t x)
-    transform (Transform m (DataX b)) (DataX x) = DataX (transform (Transform m b) x)
-
-instance Coordinate TimeStamp where
-    fromDouble d = TS d
-    toDouble (TS d) = d
-    distance (TS x1) (TS x2) = TS (distance x1 x2)
-    translate (TS t) (TS x)  = TS (translate t x)
-    transform (Transform m (TS b)) (TS x) = TS (transform (Transform m b) x)
-
-instance Coordinate UTCTime where
-    fromDouble d = addUTCTime (fromRational . toRational $ d) utc0
-    toDouble u = fromRational . toRational $ diffUTCTime u utc0
-    distance u1 u2 = fromDouble (distance (toDouble u1) (toDouble u2))
-    translate t u = fromDouble (translate (toDouble t) (toDouble u))
-    transform (Transform m b) x = fromDouble (transform (Transform m (toDouble b)) (toDouble x))
-
+    transform (Transform m (DataX b)) (DataX x) =
+        DataX (transform (Transform m b) x)
 
 utc0 :: UTCTime
 utc0 = UTCTime (toEnum 0) (fromInteger 0)
 
-unionBounds :: (Num (Scalar (Diff a)), Ord (Scalar (Diff a)), HasBasis (Diff a)
+unionBounds'm :: (Num (Scalar (Diff a)), Ord (Scalar (Diff a)), HasBasis (Diff a)
                , AffineSpace a, Ord a)
             => Maybe (Range a)
             -> Maybe (Range a)
             -> Maybe (Range a)
-unionBounds a         Nothing   = a
-unionBounds Nothing   b         = b
-unionBounds (Just r1) (Just r2) = Just (unionRange r1 r2)
+unionBounds'm a         Nothing   = a
+unionBounds'm Nothing   b         = b
+unionBounds'm (Just r1) (Just r2) = Just (unionRange r1 r2)
 
 -- | Restrict a window to within a given range
 restrictRange :: (Ord a, Coordinate a, AffineSpace a, HasBasis (Diff a)
@@ -327,196 +341,310 @@ restrictRange01 :: (Ord a, Coordinate a, AffineSpace a, HasBasis (Diff a)
                 -> Range a
 restrictRange01 = maskRange $ fromBounds (fromDouble 0.0, fromDouble 1.0)
 
-zoomRange :: (Coordinate a, Ord a) => CanvasX -> Double -> Range a -> Range a
-zoomRange (CanvasX focus) mult x = fromBounds (translate off1 x1, translate off2 x2)
+-- | Translate the range by the given amount on the canvas,
+-- scaled by the given multiplier.
+zoomRange :: (AdditiveGroup t, VectorSpace (Diff t), AffineSpace t,
+              Coordinate t)
+          => CanvasX -> Scalar (Diff t) -> Range t -> Range t
+zoomRange (CanvasX focus) mult rng =
+        fromSpanC (start ^+^ fromDouble focus) (dist ^* mult)
     where
-        (x1,x2) = toBounds x
-        off1 = fromDouble $ (oldW - newW) * focus
-        off2 = fromDouble $ (newW - oldW) * (1.0 - focus)
-        oldW = toDouble $ distance x1 x2
-        newW = min 1.0 (oldW * mult)
+        (start, dist) = toSpan rng
 
-mkTransform :: (Coordinate a, Coordinate (Diff a), Ord a, AffineSpace a)
-            => Range a
-            -> Range a
-            -> Transform a
-mkTransform old new = Transform m b
-    where
-        oldW = range old
-        newW = range new
-        m = toDouble oldW / toDouble newW
-        b = distance (rangeStart new) (rangeStart old)
+-- | A view into a full extent, as specified by 'Range ScreenX'.
+--
+-- > viewRange (fromBoundsC 0 1) === id
+--
+-- To get a 'Range' of the first half of an extent, use
+--
+-- > viewRange (fromBoundsC 0 0.5) fullExtent
+viewRange :: (VectorSpace (Diff t), AffineSpace t, Scalar (Diff t) ~ Double)
+          => Range ScreenX -> Range t -> Range t
+viewRange slice extent = fromSpanC newstart (width *^ dlength)
+  where
+    (ScreenX pstart, ScreenX width) = toSpan slice
+    (dstart, dlength) = toSpan extent
+    newstart = dstart .+^ (pstart *^ dlength)
 
-mkTSDataTransform :: Range TimeStamp -> Range TimeStamp -> Transform DataX
-mkTSDataTransform old new = Transform m b
-    where
-        oldW = range old
-        newW = range new
-        stDiff = distance (rangeStart new) (rangeStart old)
-        m = toDouble oldW / toDouble newW
-        b = fromDouble $ toDouble stDiff / toDouble newW
+----------------------------------------------------------------------
+-- Data sources
 
-mkUTCDataTransform :: Range UTCTime -> Range UTCTime -> Transform DataX
-mkUTCDataTransform old new = Transform m b
-    where
-        oldW = range old
-        newW = range new
-        stDiff = rangeStart old .-. rangeStart new
-        m = fromRational . toRational $ oldW / newW
-        b = fromDouble . fromRational . toRational $ stDiff / newW
+-- | When data is requested from a @Source@, controls the level of detail of
+-- the returned data.  @Sample@ samples the underlying data at required points,
+-- @Fold@ accumulates a value between points, and @All@ is full detail.
+--
+-- In some cases the source may ignore a @Scaling@ factor.  In particular, if
+-- the underlying data isn't particularly dense, the source may just return
+-- @All@ regardless of the specified scaling.
+data Scaling d =
+    All
+  | Sample
+  | Fold d (d -> d -> d)
+
+-- | Specify about how much data is to be requested from a source.  Hinting
+-- is useful for dense time-series data, so that the datasource can return a
+-- pruned view if possible.  The actual pruning implementation is controlled
+-- by the 'Scaling' parameter.  Some sources may ignore @Hint@ values entirely.
+--
+newtype Hint = Hint { unHint :: Int }
+  deriving (Eq, Show)
+
+-- | A @Source@ can be run to provide data.
+--
+-- The 'Scaling' parameter describes how the underlying data should be sampled.
+-- The 'Range (ScreenP)' gives the current range of the window for which data
+-- should be retrieved (normalized 0-1).
+--
+data Source sourceX sourceY = Source
+   { sourceExtent      :: IO (Range sourceX, Range sourceY)
+   , genSourceProvider :: Scaling (sourceX,sourceY)
+                          -> IO (Hint
+                                -> Range (sourceX)
+                                -> IO (U.Vector (sourceX, sourceY)))
+   }
 
 ----------------------------------------------------------------------
 
-type RGB = (Double, Double, Double)
+-- | A @PlotInfo@ contains all non-graphical information about a plot.
+data PlotInfo = PlotInfo
+   { piLegendX   :: String
+   , piLegendY   :: String
+   , piTitle     :: String
+   } deriving (Eq, Show, Ord)
 
-data DrawCmd =
-      SetRGB   Double Double Double
-    | SetRGBA  Double Double Double Double
-    | MoveTo   (Double, Double)
-    | LineTo   (Double, Double)
-    | FillPoly [(Double, Double)]
+-- | An empty @PlotInfo@.
+emptyPlotInfo :: PlotInfo
+emptyPlotInfo = PlotInfo "" "" ""
+
+-- | A @Plot@ describes how to generate a diagram from a given data source.
+data Plot sourceX sourceY diag = Plot
+   { makePlot    :: U.Vector (sourceX,sourceY) -> diag
+   , plotInfo    :: PlotInfo
+   }
+
+-- | An empty @Plot@.  Creates an empty diagram regardless of input.
+emptyPlot :: Monoid diag => Plot a b diag
+emptyPlot = Plot (const mempty) emptyPlotInfo
+
+-- Map a function over the data vector passed to a @Plot@.
+--
+-- Useful for converting from rich data sources to the more limited types
+-- available in built-in plots.
+mapPlot :: (U.Unbox outX, U.Unbox outY, U.Unbox inX, U.Unbox inY)
+        => (inX -> outX)
+        -> (inY -> outY)
+        -> Plot outX outY diag
+        -> Plot inX inY diag
+mapPlot xf yf p@Plot{..} = p {makePlot = newPlot}
+  where
+    newPlot = makePlot . U.map (xf *** yf)
+
+-- | A Layer is a single layer of the final image.  Layers can be
+-- composited in multiple ways.
+data Layer diag = Layer
+   { layerImg     :: diag
+   -- , layerExtents :: LayerExtents
+   , xLegend      :: String
+   , yLegend      :: String
+   }
 
 ----------------------------------------------------------------------
-
-class (Functor m, MonadCatchIO m) => ScopeRender m where
-    renderCmds :: [DrawCmd] -> m ()
-
-instance ScopeRender IO where
-    renderCmds = const (return ())
-
-----------------------------------------------------------------------
-
-data ScopeFile = ScopeFile
-    { filename :: FilePath
-    , fd       :: Fd
-    , scopeCF  :: CacheFile
+data Renderer diagram = Renderer
+    { plotRenderer  :: Hint -> Range DataX -> Range DataY -> IO diagram
+    , tickXRenderer :: Range DataX -> IO [Tick DataX]
+    , tickYRenderer :: Range DataY -> IO [Tick DataY]
     }
 
-----------------------------------------------------------------------
-
-type DrawLayer = [DrawCmd]
-
--- | A layer plotting function which is just given the x position and x width
--- to render the data value of type 'a' into.
-type LayerMapFunc a = Double -> Double -> a -> [DrawLayer]
-
--- | A layer plotting function which is given the x position and x width,
--- and a previously returned value of type 'b'
-type LayerFoldFunc a b = Double -> Double -> b -> a -> ([DrawLayer], b)
-
-data LayerPlot a = LayerMap (LayerMapFunc a) [DrawLayer]
-                 | forall b . LayerFold (LayerFoldFunc a b) [DrawLayer] b
-
-data LayerExtents = LayerExtents
-    { startTime :: TimeStamp
-    , endTime :: TimeStamp
-    , rangeY :: Double -- XXX: use minY, maxY to allow asymmetric data
+data Tick b = Tick
+    { tickLevel :: Int
+    , tickLabel :: Maybe String
+    , tickValue :: b
     }
+    deriving (Eq, Ord, Show, Functor)
 
-data Layer a = Layer
-    { layerFile :: ScopeFile
-    , layerTrackNo :: TrackNo
-    , layerBaseUTC :: Maybe UTCTime
-    , layerExtents :: LayerExtents
-    , convEnee :: forall m . (Functor m, Monad m) => Enumeratee [Offset Block] [a] m ()
-    , plotter :: LayerPlot a
-    }
-
-data ScopeLayer = forall a . Timestampable a => ScopeLayer (Layer a)
-
-----------------------------------------------------------------------
-
-class ScopePlot a where
-    rawLayerPlot :: LayerExtents -> RGB -> LayerPlot (TimeStamp, [a])
-    summaryLayerPlot :: LayerExtents -> RGB -> LayerPlot [Summary a]
-
-----------------------------------------------------------------------
-
-data ReadMethods a = ReadMethods
-    { readIdentifiers :: [IdentifyCodec]
-    , readExtents :: forall m . (Functor m, MonadIO m) => TrackNo -> Iteratee [Offset Block] m LayerExtents
-    , rawConvEnee :: forall m . (Functor m, Monad m) => Enumeratee [Offset Block] [(TimeStamp, [a])] m ()
-    , summaryConvEnee :: forall m . (Functor m, Monad m) => Enumeratee [Offset Block] [[Summary a]] m ()
-    }
-
-data ScopeRead = forall a . (ScopePlot a) => ScopeRead (ReadMethods a)
-
-----------------------------------------------------------------------
-
-data Scope ui = Scope
-    { view   :: View ui
-    , bounds :: Maybe (Range TimeStamp)
-    , utcBounds :: Maybe (Range UTCTime)
-    , layers :: [ScopeLayer]
+data Scope diagram ui = Scope
+    { view      :: View ui
+    , renderers :: Map PlotInfo (Renderer diagram)
     }
 
 data View ui = View
-    { viewX1 :: DataX
-    , viewY1 :: Double
-    , viewX2 :: DataX
-    , viewY2 :: Double
+    { viewX  :: Range DataX
+    , viewY  :: Range DataY
     , pointerX :: Maybe CanvasX
     , dragDX :: Maybe DataX -- DataX of pointer at drag down
     , viewUI :: ui
     }
 
-scopeNew :: ui -> Scope ui
-scopeNew ui = Scope {
-      view = viewInit ui
-    , bounds = Nothing
-    , utcBounds = Nothing
-    , layers = []
-    }
-
-scopeClose :: Scope ui -> IO (Scope ui)
-scopeClose scope = do
-    mapM_ closeFd . nub . map fd' . layers $ scope
-    return scope{bounds=Nothing, utcBounds=Nothing, layers=[]}
-    where
-        fd' (ScopeLayer l) = fd . layerFile $ l
-
-scopeModifyView :: (View ui -> View ui) -> Scope ui -> Scope ui
+scopeModifyView :: (View ui -> View ui) -> Scope diag ui -> Scope diag ui
 scopeModifyView f scope = scope{ view = f (view scope) }
 
-scopeTransform :: Transform DataX -> Scope ui -> Scope ui
-scopeTransform tf = scopeModifyView (viewTransform tf)
+addPlot :: Source sourceX sourceY
+        -> Plot sourceX sourceY diagram
+        -> Scaling (sourceX, sourceY)
+        -> Scope diagram ui
+        -> IO (Scope diagram ui)
+addPlot Source{..} Plot{..} sourceScaling s@Scope{..} = do
+    prov <- genSourceProvider sourceScaling
+    renderFn <- error "not yet implemented"
+    let newRenderers = Map.insert plotInfo renderFn renderers
+    return $ s { renderers = newRenderers }
 
-viewInit :: ui -> View ui
-viewInit = View (DataX 0.0) (-1.0) (DataX 1.0) 1.0 Nothing Nothing
+-- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
+mkRenderer2D :: (InnerSpace sourceX, InnerSpace sourceY
+              ,U.Unbox sourceX, U.Unbox sourceY
+              ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
+              ,Num sourceX, Num sourceY
+              ,Backend b R2, Monoid' m)
+           => Scaling (sourceX, sourceY)
+           -> Source sourceX sourceY
+           -> Plot sourceX sourceY (QDiagram b R2 m)
+           -> IO (Renderer (QDiagram b R2 m))
+mkRenderer2D sourceScaling Source{..} Plot{..} = do
+    mkSource <- genSourceProvider sourceScaling
+    let tickX = undefined
+        tickY = undefined
+        xProj = 1
+        yProj = 1
+    let plotRenderer hint xRng yRng = do
+        (xRngAbs, yRngAbs) <- sourceExtent
+        let (xProjMin,xProjMax) = toBounds $ (<.> xProj) <$> xRngAbs
+            (yProjMin,yProjMax) = toBounds $ (<.> yProj) <$> yRngAbs
 
-viewTransform :: Transform DataX -> View ui -> View ui
-viewTransform tf v@View{..} = v {
-      viewX1 = transform tf viewX1
-    , viewX2 = transform tf viewX2
-    , dragDX = transform tf <$> dragDX
-    }
+            xReqS = (lerp xProjMin xProjMax . unDataX) <$> xRng
+            xReq = (*^ xProj) <$> xReqS
+            (xReqMin,xReqMax) = toBounds xReqS
 
-scopeUpdate :: Maybe (Range TimeStamp)
-            -> Maybe (Range UTCTime)
-            -> Scope ui -> Scope ui
-scopeUpdate newBounds Nothing scope =
-    (t scope) { bounds = mb , utcBounds = Nothing }
-    where
-        oldBounds = bounds scope
-        mb = unionBounds oldBounds newBounds
-        t = case oldBounds of
-                Just ob -> if oldBounds == mb
-                               then id
-                               else scopeTransform (mkTSDataTransform ob (fromJust mb))
-                _ -> id
+            yReqS = (lerp yProjMin yProjMax . unDataY) <$> yRng
+            (yReqMin,yReqMax) = toBounds yReqS
 
-scopeUpdate newBounds (Just newUTCBounds) scope
-    | (not . null . layers $ scope) && isNothing oldUTCBounds = scopeUpdate newBounds Nothing scope
-    | otherwise = (t scope) { bounds = mb , utcBounds = umb }
-    where
-        oldBounds = bounds scope
-        oldUTCBounds = utcBounds scope
-        mb = unionBounds oldBounds newBounds
-        umb = unionBounds oldUTCBounds (Just newUTCBounds)
-        t = case oldUTCBounds of
-                Just uob -> if oldUTCBounds == umb
-                               then id
-                               else scopeTransform (mkUTCDataTransform uob (fromJust umb))
-                _ -> id
+        datavec <- mkSource hint xReq
+
+        let (!xMin,!xMax,!yMin,!yMax) = case U.length datavec of
+                0 -> let x = xReqMin
+                         y = yProjMin
+                     in (x,x,y,y)
+                1 -> let (x,y) = datavec U.! 0
+                         xAdj = x <.> xProj
+                         yAdj = y <.> yProj
+                     in (xAdj,xAdj,yAdj,yAdj)
+                _ -> let (xh,yh) = datavec U.! 0
+                         xh' = xh <.> xProj
+                         yh' = yh <.> yProj
+                         f (!x0,!x1,!y0,!y1) (x,y) = (min x0 (x <.> xProj)
+                                                     ,max x1 (x <.> xProj)
+                                                     ,min y0 (y <.> yProj)
+                                                     ,max y1 (y <.> yProj))
+                     in U.foldl' f (xh',xh',yh',yh') datavec
+
+        let rawDiag    = makePlot datavec
+            -- TODO: is it necessary to scale by the returned diagram size?
+            -- maybe can just use the requested/received diffs as struts
+            -- requires convention as to diagram size though.
+            (dWidth, dHeight)  = size2D rawDiag
+
+            xProjScaleFac = let xdiff' = xMax - xMin
+                            in if dWidth > 0 && xdiff' > 0 then dWidth / xdiff' else 1
+            yProjScaleFac = let ydiff' = yMax - yMin
+                            in if dHeight > 0 && ydiff' > 0 then dHeight / ydiff' else 1
+
+            xMinDiff = xMin - xReqMin
+            xMaxDiff = xReqMax - xMax
+            yMinDiff = yMin - yReqMin
+            yMaxDiff = yReqMax - yMax
+
+            xstrut dif = if dif > 0 then strutX (dif * xProjScaleFac) else mempty
+            ystrut dif = if dif > 0 then strutY (dif * yProjScaleFac) else mempty
+
+            paddedDiag = ystrut yMaxDiff
+                         ===
+                         (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
+                         ===
+                         ystrut yMinDiff
+            clipMin = p2 (xReqMin, yReqMin)
+            clipV   = p2 (xReqMax, yReqMax) .-. clipMin
+        return $ D.view clipMin clipV paddedDiag
+    return $ Renderer plotRenderer tickX tickY
+
+-- | create a 'Renderer' for the provided 'Source' and 'Plot'
+--
+-- A low-level function that typically wouldn't be called by user code.
+mkRenderer :: (InnerSpace sourceX, InnerSpace sourceY
+              ,U.Unbox sourceX, U.Unbox sourceY
+              ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
+              ,Backend b R2, Monoid' m)
+           => IO (sourceX,sourceY)     -- unit vectors in the direction of the x/y views
+           -> Scaling (sourceX, sourceY)
+           -> Source sourceX sourceY
+           -> Plot sourceX sourceY (QDiagram b R2 m)
+           -> IO (Renderer (QDiagram b R2 m))
+mkRenderer proj sourceScaling Source{..} Plot{..} = do
+    mkSource <- genSourceProvider sourceScaling
+    let tickX = undefined
+        tickY = undefined
+    let plotRenderer hint xRng yRng = do
+        (xRngAbs, yRngAbs) <- sourceExtent
+        (xProj,yProj) <- proj
+        let (xProjMin,xProjMax) = toBounds $ (<.> xProj) <$> xRngAbs
+            (yProjMin,yProjMax) = toBounds $ (<.> yProj) <$> yRngAbs
+
+            -- calculate the projection of the available min/max x-values
+            -- onto the viewable x-axis, to determine the min/max x-values we
+            -- should request from the data source.
+
+            -- scalar projection of available extent onto view-axis vector
+            xReqS = (lerp xProjMin xProjMax . unDataX) <$> xRng
+            xReq = (*^ xProj) <$> xReqS
+            (xReqMin,xReqMax) = toBounds xReqS
+
+            yReqS = (lerp yProjMin yProjMax . unDataY) <$> yRng
+            (yReqMin,yReqMax) = toBounds yReqS
+
+        datavec <- mkSource hint xReq
+
+        let (!xMin,!xMax,!yMin,!yMax) = case U.length datavec of
+                0 -> let x = xReqMin
+                         y = yProjMin
+                     in (x,x,y,y)
+                1 -> let (x,y) = datavec U.! 0
+                         xAdj = x <.> xProj
+                         yAdj = y <.> yProj
+                     in (xAdj,xAdj,yAdj,yAdj)
+                _ -> let (xh,yh) = datavec U.! 0
+                         xh' = xh <.> xProj
+                         yh' = yh <.> yProj
+                         f (!x0,!x1,!y0,!y1) (x,y) = (min x0 (x <.> xProj)
+                                                     ,max x1 (x <.> xProj)
+                                                     ,min y0 (y <.> yProj)
+                                                     ,max y1 (y <.> yProj))
+                     in U.foldl' f (xh',xh',yh',yh') datavec
+
+        let rawDiag    = makePlot datavec
+            -- TODO: is it necessary to scale by the returned diagram size?
+            -- maybe can just use the requested/received diffs as struts
+            -- requires convention as to diagram size though.
+            (dWidth, dHeight)  = size2D rawDiag
+
+            xProjScaleFac = let xdiff' = xMax - xMin
+                            in if dWidth > 0 && xdiff' > 0 then dWidth / xdiff' else 1
+            yProjScaleFac = let ydiff' = yMax - yMin
+                            in if dHeight > 0 && ydiff' > 0 then dHeight / ydiff' else 1
+
+            xMinDiff = xMin - xReqMin
+            xMaxDiff = xReqMax - xMax
+            yMinDiff = yMin - yReqMin
+            yMaxDiff = yReqMax - yMax
+
+            xstrut dif = if dif > 0 then strutX (dif * xProjScaleFac) else mempty
+            ystrut dif = if dif > 0 then strutY (dif * yProjScaleFac) else mempty
+
+            paddedDiag = ystrut yMaxDiff
+                         ===
+                         (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
+                         ===
+                         ystrut yMinDiff
+            clipMin = p2 (xReqMin, yReqMin)
+            clipV   = p2 (xReqMax, yReqMax) .-. clipMin
+        return $ D.view clipMin clipV paddedDiag
+    return $ Renderer plotRenderer tickX tickY
 
 ----------------------------------------------------------------------
