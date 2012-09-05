@@ -2,7 +2,11 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
-{-# OPTIONS -Wall #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# OPTIONS -Wall -fno-warn-orphans #-}
 ----------------------------------------------------------------------
 {- |
    Module      : Scope.Types
@@ -94,6 +98,9 @@ import Data.Iteratee (Iteratee, Enumeratee)
 import Data.List (nub)
 import Data.Offset
 import Data.Maybe
+import Data.RangeSpace ( Range, AffineSpace(..), AdditiveGroup(..), VectorSpace(..)
+                       , HasBasis(..), translateRange, unionRange, range, rangeStart
+                       , maskRange, toBounds, fromBounds)
 import Data.Time.Clock
 import Data.ZoomCache
 import System.Posix
@@ -113,12 +120,145 @@ class Coordinate a where
 
     transform :: Transform a -> a -> a
 
-newtype ScreenX = ScreenX Double deriving (Eq, Ord, Show)
-newtype ScreenY = ScreenY Double deriving (Eq, Ord, Show)
-newtype CanvasX = CanvasX Double deriving (Eq, Ord, Show)
-newtype CanvasY = CanvasY Double deriving (Eq, Ord, Show)
-newtype DataX   = DataX   Double deriving (Eq, Ord, Show)
-newtype DataY   = DataY   Double deriving (Eq, Ord, Show)
+newtype ScreenX = ScreenX Double deriving (Eq, Ord, Show, Num)
+newtype ScreenY = ScreenY Double deriving (Eq, Ord, Show, Num)
+newtype CanvasX = CanvasX Double deriving (Eq, Ord, Show, Num)
+newtype CanvasY = CanvasY Double deriving (Eq, Ord, Show, Num)
+newtype DataX   = DataX   Double deriving (Eq, Ord, Show, Num)
+newtype DataY   = DataY   Double deriving (Eq, Ord, Show, Num)
+
+
+deriving instance AdditiveGroup ScreenX
+deriving instance AdditiveGroup ScreenY
+deriving instance AdditiveGroup CanvasX
+deriving instance AdditiveGroup CanvasY
+deriving instance AdditiveGroup DataX
+deriving instance AdditiveGroup DataY
+
+instance AdditiveGroup NominalDiffTime where
+    zeroV = 0
+    (^+^) = (+)
+    negateV = negate
+
+instance AffineSpace ScreenX where
+    type Diff ScreenX = ScreenX
+    (ScreenX l) .-. (ScreenX r) = ScreenX (l .-. r)
+    (ScreenX l) .+^ (ScreenX r) = ScreenX (l .+^ r)
+
+instance AffineSpace ScreenY where
+    type Diff ScreenY = ScreenY
+    (ScreenY l) .-. (ScreenY r) = ScreenY (l .-. r)
+    (ScreenY l) .+^ (ScreenY r) = ScreenY (l .+^ r)
+
+instance AffineSpace CanvasX where
+    type Diff CanvasX = CanvasX
+    (CanvasX l) .-. (CanvasX r) = CanvasX (l .-. r)
+    (CanvasX l) .+^ (CanvasX r) = CanvasX (l .+^ r)
+
+instance AffineSpace CanvasY where
+    type Diff CanvasY = CanvasY
+    (CanvasY l) .-. (CanvasY r) = CanvasY (l .-. r)
+    (CanvasY l) .+^ (CanvasY r) = CanvasY (l .+^ r)
+
+instance AffineSpace DataX where
+    type Diff DataX = DataX
+    (DataX l) .-. (DataX r) = DataX (l .-. r)
+    (DataX l) .+^ (DataX r) = DataX (l .+^ r)
+
+instance AffineSpace DataY where
+    type Diff DataY = DataY
+    (DataY l) .-. (DataY r) = DataY (l .-. r)
+    (DataY l) .+^ (DataY r) = DataY (l .+^ r)
+
+instance AffineSpace UTCTime where
+    type Diff UTCTime = NominalDiffTime
+    (.-.) = diffUTCTime
+    (.+^) = flip addUTCTime
+
+instance AffineSpace NominalDiffTime where
+    type Diff NominalDiffTime = NominalDiffTime
+    (.-.) = (-)
+    (.+^) = (+)
+
+instance AffineSpace TimeStamp where
+    type Diff TimeStamp = Double
+    l .-. r  = toDouble l - toDouble r
+    l .+^ r  = fromDouble (toDouble l + fromDouble r)
+
+instance VectorSpace ScreenX where
+    type Scalar ScreenX = Double
+    l *^ (ScreenX r) = ScreenX (l *^ r)
+
+instance VectorSpace ScreenY where
+    type Scalar ScreenY = Double
+    l *^ (ScreenY r) = ScreenY (l *^ r)
+
+instance VectorSpace CanvasX where
+    type Scalar CanvasX = Double
+    l *^ (CanvasX r) = CanvasX (l *^ r)
+
+instance VectorSpace CanvasY where
+    type Scalar CanvasY = Double
+    l *^ (CanvasY r) = CanvasY (l *^ r)
+
+instance VectorSpace DataX where
+    type Scalar DataX = Double
+    l *^ (DataX r) = DataX (l *^ r)
+
+instance VectorSpace DataY where
+    type Scalar DataY = Double
+    l *^ (DataY r) = DataY (l *^ r)
+
+-- | Having Scalar NominalDiffTime = Double means that scaling
+-- and basis decomposition have to go through Rational.
+-- Maybe this should be revisited.
+instance VectorSpace NominalDiffTime where
+    -- Scalar is Double so we can form a basis like
+    -- D2V (DataX, NominalDiffTime)
+    type Scalar NominalDiffTime = Double
+    s *^ difftime = (realToFrac s) * difftime
+
+instance HasBasis ScreenX where
+    type Basis ScreenX = ()
+    basisValue () = 1
+    decompose (ScreenX v) = decompose v
+    decompose' (ScreenX v) = decompose' v
+
+instance HasBasis ScreenY where
+    type Basis ScreenY = ()
+    basisValue () = 1
+    decompose (ScreenY v) = decompose v
+    decompose' (ScreenY v) = decompose' v
+
+instance HasBasis CanvasX where
+    type Basis CanvasX = ()
+    basisValue () = 1
+    decompose (CanvasX v) = decompose v
+    decompose' (CanvasX v) = decompose' v
+
+instance HasBasis CanvasY where
+    type Basis CanvasY = ()
+    basisValue () = 1
+    decompose (CanvasY v) = decompose v
+    decompose' (CanvasY v) = decompose' v
+
+instance HasBasis DataX where
+    type Basis DataX = ()
+    basisValue () = 1
+    decompose (DataX v) = decompose v
+    decompose' (DataX v) = decompose' v
+
+instance HasBasis DataY where
+    type Basis DataY = ()
+    basisValue () = 1
+    decompose (DataY v) = decompose v
+    decompose' (DataY v) = decompose' v
+
+instance HasBasis NominalDiffTime where
+    type Basis NominalDiffTime = ()
+    basisValue () = 1
+    decompose dtime = [((), realToFrac dtime)]
+    decompose' dtime () = realToFrac dtime
 
 instance Coordinate Double where
     fromDouble = id
@@ -162,66 +302,68 @@ instance Coordinate UTCTime where
     translate t u = fromDouble (translate (toDouble t) (toDouble u))
     transform (Transform m b) x = fromDouble (transform (Transform m (toDouble b)) (toDouble x))
 
+
 utc0 :: UTCTime
 utc0 = UTCTime (toEnum 0) (fromInteger 0)
 
-unionBounds :: Ord a => Maybe (a, a) -> Maybe (a, a) -> Maybe (a, a)
+unionBounds :: (Num (Scalar (Diff a)), Ord (Scalar (Diff a)), HasBasis (Diff a)
+               , AffineSpace a, Ord a)
+            => Maybe (Range a)
+            -> Maybe (Range a)
+            -> Maybe (Range a)
 unionBounds a         Nothing   = a
 unionBounds Nothing   b         = b
 unionBounds (Just r1) (Just r2) = Just (unionRange r1 r2)
 
-translateRange :: Coordinate a => a -> (a, a) -> (a, a)
-translateRange t (x1, x2) = (translate t x1, translate t x2)
-
-unionRange :: Ord a => (a, a) -> (a, a) -> (a, a)
-unionRange (a1, a2) (b1, b2) = (min a1 b1, max a2 b2)
-
 -- | Restrict a window to within a given range
-restrictRange :: (Ord a, Coordinate a) => (a, a) -> (a, a) -> (a, a)
-restrictRange (rangeX1, rangeX2) (x1, x2)
-    | w >= rW      = (rangeX1, rangeX2)
-    | x1 < rangeX1 = (rangeX1, translate rangeX1 w)
-    | x2 > rangeX2 = (x1', rangeX2)
-    | otherwise    = (x1, x2)
-    where
-        rW = distance rangeX1 rangeX2
-        w = distance x1 x2
-        x1' = distance w rangeX2
+restrictRange :: (Ord a, Coordinate a, AffineSpace a, HasBasis (Diff a)
+                 ,Num (Scalar (Diff a)), Eq (Basis (Diff a)), Ord (Scalar (Diff a)))
+              => Range a -> Range a -> Range a
+restrictRange = maskRange
 
-restrictRange01 :: (Ord a, Coordinate a) => (a, a) -> (a, a)
-restrictRange01 = restrictRange (fromDouble 0.0, fromDouble 1.0)
+restrictRange01 :: (Ord a, Coordinate a, AffineSpace a, HasBasis (Diff a)
+                   ,Ord (Scalar (Diff a)), Num (Scalar (Diff a)), Eq (Basis (Diff a)))
+                => Range a
+                -> Range a
+restrictRange01 = maskRange $ fromBounds (fromDouble 0.0, fromDouble 1.0)
 
-zoomRange :: Coordinate a => CanvasX -> Double -> (a, a) -> (a, a)
-zoomRange (CanvasX focus) mult (x1, x2) = (translate off1 x1, translate off2 x2)
+zoomRange :: (Coordinate a, Ord a) => CanvasX -> Double -> Range a -> Range a
+zoomRange (CanvasX focus) mult x = fromBounds (translate off1 x1, translate off2 x2)
     where
+        (x1,x2) = toBounds x
         off1 = fromDouble $ (oldW - newW) * focus
         off2 = fromDouble $ (newW - oldW) * (1.0 - focus)
         oldW = toDouble $ distance x1 x2
         newW = min 1.0 (oldW * mult)
 
-mkTransform :: Coordinate a => (a, a) -> (a, a) -> Transform a
-mkTransform (old1, old2) (new1, new2) = Transform m b
+mkTransform :: (Coordinate a, Coordinate (Diff a), Ord a, AffineSpace a)
+            => Range a
+            -> Range a
+            -> Transform a
+mkTransform old new = Transform m b
     where
-        oldW = distance old1 old2
-        newW = distance new1 new2
+        oldW = range old
+        newW = range new
         m = toDouble oldW / toDouble newW
-        b = distance new1 old1
+        b = distance (rangeStart new) (rangeStart old)
 
-mkTSDataTransform :: (TimeStamp, TimeStamp) -> (TimeStamp, TimeStamp) -> Transform DataX
-mkTSDataTransform (old1, old2) (new1, new2) = Transform m b
+mkTSDataTransform :: Range TimeStamp -> Range TimeStamp -> Transform DataX
+mkTSDataTransform old new = Transform m b
     where
-        oldW = distance old1 old2
-        newW = distance new1 new2
+        oldW = range old
+        newW = range new
+        stDiff = distance (rangeStart new) (rangeStart old)
         m = toDouble oldW / toDouble newW
-        b = fromDouble $ toDouble (distance new1 old1) / toDouble newW
+        b = fromDouble $ toDouble stDiff / toDouble newW
 
-mkUTCDataTransform :: (UTCTime, UTCTime) -> (UTCTime, UTCTime) -> Transform DataX
-mkUTCDataTransform (old1, old2) (new1, new2) = Transform m b
+mkUTCDataTransform :: Range UTCTime -> Range UTCTime -> Transform DataX
+mkUTCDataTransform old new = Transform m b
     where
-        oldW = distance old1 old2
-        newW = distance new1 new2
-        m = toDouble oldW / toDouble newW
-        b = fromDouble $ toDouble (distance new1 old1) / toDouble newW
+        oldW = range old
+        newW = range new
+        stDiff = rangeStart old .-. rangeStart new
+        m = fromRational . toRational $ oldW / newW
+        b = fromDouble . fromRational . toRational $ stDiff / newW
 
 ----------------------------------------------------------------------
 
@@ -303,8 +445,8 @@ data ScopeRead = forall a . (ScopePlot a) => ScopeRead (ReadMethods a)
 
 data Scope ui = Scope
     { view   :: View ui
-    , bounds :: Maybe (TimeStamp, TimeStamp)
-    , utcBounds :: Maybe (UTCTime, UTCTime)
+    , bounds :: Maybe (Range TimeStamp)
+    , utcBounds :: Maybe (Range UTCTime)
     , layers :: [ScopeLayer]
     }
 
@@ -349,8 +491,8 @@ viewTransform tf v@View{..} = v {
     , dragDX = transform tf <$> dragDX
     }
 
-scopeUpdate :: Maybe (TimeStamp, TimeStamp)
-            -> Maybe (UTCTime, UTCTime)
+scopeUpdate :: Maybe (Range TimeStamp)
+            -> Maybe (Range UTCTime)
             -> Scope ui -> Scope ui
 scopeUpdate newBounds Nothing scope =
     (t scope) { bounds = mb , utcBounds = Nothing }

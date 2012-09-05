@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS -Wall #-}
 ----------------------------------------------------------------------
 -- |
@@ -48,6 +49,7 @@ module Scope.View (
 ) where
 
 import Data.Maybe (fromJust)
+import Data.RangeSpace (Range, toBounds, fromBoundsC)
 import Data.Time (UTCTime)
 import Data.ZoomCache
 
@@ -62,20 +64,20 @@ canvasToData View{..} (CanvasX cX) = translate viewX1 $
 timeStampToData :: Scope ui -> TimeStamp -> Maybe DataX
 timeStampToData Scope{..} (TS ts) = fmap tsToData bounds
     where
-        tsToData :: (TimeStamp, TimeStamp) -> DataX
-        tsToData (TS t1, TS t2) = DataX $ ts - t1 / (t2 - t1)
+        tsToData :: Range TimeStamp -> DataX
+        tsToData (toBounds -> (TS t1, TS t2)) = DataX $ ts - t1 / (t2 - t1)
 
 dataToTimeStamp :: Scope ui -> DataX -> Maybe TimeStamp
 dataToTimeStamp Scope{..} (DataX dX) = fmap dataToTS bounds
     where
-        dataToTS :: (TimeStamp, TimeStamp) -> TimeStamp
-        dataToTS (TS t1, TS t2) = TS $ t1 + dX * (t2 - t1)
+        dataToTS :: Range TimeStamp -> TimeStamp
+        dataToTS (toBounds -> (TS t1, TS t2)) = TS $ t1 + dX * (t2 - t1)
 
 dataToUTC :: Scope ui -> DataX -> Maybe UTCTime
 dataToUTC Scope{..} (DataX dX) = fmap dToUTC utcBounds
     where
-        dToUTC :: (UTCTime, UTCTime) -> UTCTime
-        dToUTC (u1, u2) = fromDouble $ t1 + dX * (t2 - t1)
+        dToUTC :: Range UTCTime -> UTCTime
+        dToUTC (toBounds -> (u1, u2)) = fromDouble $ t1 + dX * (t2 - t1)
             where
                 t1 = toDouble u1
                 t2 = toDouble u2
@@ -118,18 +120,20 @@ viewDuration scope view =
 
 ----------------------------------------------------------------------
 
-viewSetEnds :: DataX -> DataX -> View ui -> View ui
-viewSetEnds x1 x2 v@View{..} = v { viewX1 = x1, viewX2 = x2 }
+viewSetEnds :: Range DataX -> View ui -> View ui
+viewSetEnds xRng v@View{..} = v { viewX1 = x1, viewX2 = x2 }
+    where
+        (x1,x2) = toBounds xRng
 
 -- | Align a view so the given DataX appears at CanvasX,
 -- preserving the current view width.
 viewAlign :: CanvasX -> DataX -> View ui -> View ui
-viewAlign (CanvasX cx) (DataX dx) v@View{..} = viewSetEnds (DataX newX1') (DataX newX2') v
+viewAlign (CanvasX cx) (DataX dx) v@View{..} = viewSetEnds (fmap DataX newX') v
     where
         DataX vW = distance viewX1 viewX2 -- current width of view window
         newX1 = max 0 $ dx - (cx * vW)
         newX2 = newX1 + vW
-        (newX1', newX2') = restrictRange01 (newX1, newX2)
+        newX' = restrictRange01 $ fromBoundsC newX1 newX2
 
 viewMoveStart :: View ui -> View ui
 viewMoveStart = viewAlign (CanvasX 0.0) (DataX 0.0)
@@ -144,11 +148,11 @@ viewMoveRight :: View ui -> View ui
 viewMoveRight v@View{..} = viewAlign (CanvasX 1.0) viewX1 v
 
 viewMoveTo :: Double -> View ui -> View ui
-viewMoveTo val v@View{..} = viewSetEnds newX1' newX2' v
+viewMoveTo val v@View{..} = viewSetEnds newX v
     where
-        (newX1', newX2') = restrictRange01 .
+        newX = restrictRange01 .
             translateRange (distance viewX1 (DataX val)) $
-            (viewX1, viewX2)
+            fromBoundsC viewX1 viewX2
 
 viewZoomIn :: Double -> View ui -> View ui
 viewZoomIn = viewZoomInOn (CanvasX 0.5)
@@ -160,10 +164,9 @@ viewZoomOut :: Double -> View ui -> View ui
 viewZoomOut = viewZoomOutOn (CanvasX 0.5)
 
 viewZoomOutOn :: CanvasX -> Double -> View ui -> View ui
-viewZoomOutOn focus mult v@View{..} = viewSetEnds newX1 newX2' v
+viewZoomOutOn focus mult v@View{..} = viewSetEnds newX v
     where
-        (newX1, newX2') = restrictRange01 $
-            zoomRange focus mult (viewX1, viewX2)
+        newX = restrictRange01 $ zoomRange focus mult (fromBoundsC viewX1 viewX2)
 
 viewButtonDown :: CanvasX -> View ui -> View ui
 viewButtonDown cX v = v { dragDX = Just (canvasToData v cX) }

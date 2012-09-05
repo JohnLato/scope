@@ -32,6 +32,7 @@ import qualified Data.Iteratee.IO.OffsetFd as OffI
 import Data.List (groupBy)
 import Data.Maybe (fromJust, listToMaybe)
 import Data.Offset
+import Data.RangeSpace (Range, fromBounds)
 import Data.Time.Clock
 import Data.ZoomCache.Numeric
 import System.Posix
@@ -70,7 +71,7 @@ scopeEnum :: ScopeRender m => ScopeFile -> I.Iteratee (Offset ByteString) m a ->
 scopeEnum ScopeFile{..} iter = OffI.enumFdRandomOBS scopeBufSize fd iter >>= I.run
 
 layersFromFile :: ScopeRead -> ScopeFile
-               -> IO ([ScopeLayer], Maybe (TimeStamp, TimeStamp), Maybe (UTCTime, UTCTime))
+               -> IO ([ScopeLayer], Maybe (Range TimeStamp), Maybe (Range UTCTime))
 layersFromFile (ScopeRead ReadMethods{..}) file@ScopeFile{..} = do
     let base   = baseUTC . cfGlobal $ scopeCF
         tracks = IM.keys . cfSpecs $ scopeCF
@@ -78,9 +79,9 @@ layersFromFile (ScopeRead ReadMethods{..}) file@ScopeFile{..} = do
     foldl1 merge <$> mapM (\t -> scopeEnum file (I.joinI $ enumBlock scopeCF $ iterListLayers base t))
                           (zip tracks colors)
     where
-        merge :: ([ScopeLayer], Maybe (TimeStamp, TimeStamp), Maybe (UTCTime, UTCTime))
-              -> ([ScopeLayer], Maybe (TimeStamp, TimeStamp), Maybe (UTCTime, UTCTime))
-              -> ([ScopeLayer], Maybe (TimeStamp, TimeStamp), Maybe (UTCTime, UTCTime))
+        merge :: ([ScopeLayer], Maybe (Range TimeStamp), Maybe (Range UTCTime))
+              -> ([ScopeLayer], Maybe (Range TimeStamp), Maybe (Range UTCTime))
+              -> ([ScopeLayer], Maybe (Range TimeStamp), Maybe (Range UTCTime))
         merge (ls1, bs1, ubs1) (ls2, bs2, ubs2) =
             (ls1 ++ ls2, unionBounds bs1 bs2, unionBounds ubs1 ubs2)
 
@@ -88,12 +89,13 @@ layersFromFile (ScopeRead ReadMethods{..}) file@ScopeFile{..} = do
             listLayers base trackNo color <$> readExtents trackNo
 
         listLayers :: Maybe UTCTime -> TrackNo -> RGB -> LayerExtents
-                   -> ([ScopeLayer], Maybe (TimeStamp, TimeStamp), Maybe (UTCTime, UTCTime))
+                   -> ([ScopeLayer], Maybe (Range TimeStamp), Maybe (Range UTCTime))
         listLayers base trackNo rgb extents = ([ rawListLayer base trackNo extents
                                                , sListLayer base trackNo rgb extents
                                                ]
-                                              , Just (entry, exit)
-                                              , utcBounds (entry, exit) <$> base)
+                                              , Just $ fromBounds (entry, exit)
+                                              , fromBounds . utcBounds (entry, exit)
+                                                  <$> base)
             where
                 entry = startTime extents
                 exit = endTime extents
