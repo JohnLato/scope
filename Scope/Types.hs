@@ -439,14 +439,12 @@ mapPlot xf yf p@Plot{..} = p {makePlot = newPlot}
   where
     newPlot = makePlot . U.map (xf *** yf)
 
--- | A Layer is a single layer of the final image.  Layers can be
--- composited in multiple ways.
-data Layer diag = Layer
-   { layerImg     :: diag
-   -- , layerExtents :: LayerExtents
-   , xLegend      :: String
-   , yLegend      :: String
-   }
+-- | A Layer is a single layer of the final image.  Layers are used for
+-- compositing plots.
+data Layer diagram = Layer
+  { layerPlotInfo :: PlotInfo
+  , layerRenderer :: Renderer diagram
+  }
 
 ----------------------------------------------------------------------
 data Renderer diagram = Renderer
@@ -463,8 +461,8 @@ data Tick b = Tick
     deriving (Eq, Ord, Show, Functor)
 
 data Scope diagram ui = Scope
-    { view      :: View ui
-    , renderers :: Map PlotInfo (Renderer diagram)
+    { view   :: View ui
+    , layers :: [Layer diagram]
     }
 
 data View ui = View
@@ -486,8 +484,7 @@ addPlot :: Source sourceX sourceY
 addPlot Source{..} Plot{..} sourceScaling s@Scope{..} = do
     prov <- genSourceProvider sourceScaling
     renderFn <- error "not yet implemented"
-    let newRenderers = Map.insert plotInfo renderFn renderers
-    return $ s { renderers = newRenderers }
+    return undefined
 
 -- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
 mkRenderer2D :: (InnerSpace sourceX, InnerSpace sourceY

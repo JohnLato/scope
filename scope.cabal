@@ -53,6 +53,7 @@ Library
 
   Exposed-modules:
     Scope.Axes
+    Scope.Layer
     Scope.Plots.TwoD
     Scope.Plots.TwoD.Line
     Scope.Sources
