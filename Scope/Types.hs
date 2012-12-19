@@ -10,6 +10,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS -Wall -fno-warn-orphans #-}
 ----------------------------------------------------------------------
@@ -97,7 +98,7 @@ module Scope.Types (
     -- * Scope
     -- , ScopeFile(..)
     , Scope(..)
-    -- , scopeNew
+    , scopeNew
     -- , scopeClose
     -- , scopeUpdate
     , scopeModifyView
@@ -474,8 +475,20 @@ data View ui = View
     , viewUI :: ui
     }
 
+scopeNew :: ui -> Scope diagram ui
+scopeNew ui = Scope {view=viewInit ui, layers=[]}
+
 scopeModifyView :: (View ui -> View ui) -> Scope diag ui -> Scope diag ui
 scopeModifyView f scope = scope{ view = f (view scope) }
+
+viewInit :: ui -> View ui
+viewInit ui = View
+    { viewX = fromBounds (0,1)
+    , viewY = fromBounds (0,1)
+    , pointerX = Nothing
+    , dragDX     = Nothing
+    , viewUI   = ui
+    }
 
 addPlot :: Source sourceX sourceY
         -> Plot sourceX sourceY diagram
