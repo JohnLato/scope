@@ -127,7 +127,8 @@ import Data.Time.Clock
 
 import qualified Data.Vector.Unboxed as U
 
-import Diagrams.Prelude hiding (view,translate,transform, extentX, extentY)
+-- import Diagrams.Prelude hiding (view,translate,transform, extentX, extentY)
+import Diagrams.Prelude (Backend, R2, Monoid'(..), Monoid(..), Diagram, QDiagram, (|||),(===))
 import qualified Diagrams.Prelude as D
 import Data.Basis             as V
 import Data.RangeSpace        as V
@@ -537,7 +538,7 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
             -- TODO: is it necessary to scale by the returned diagram size?
             -- maybe can just use the requested/received diffs as struts
             -- requires convention as to diagram size though.
-            (dWidth, dHeight)  = size2D rawDiag
+            (dWidth, dHeight)  = D.size2D rawDiag
 
             xProjScaleFac = let xdiff' = xMax - xMin
                             in if dWidth > 0 && xdiff' > 0 then dWidth / xdiff' else 1
@@ -549,16 +550,16 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
             yMinDiff = yMin - yReqMin
             yMaxDiff = yReqMax - yMax
 
-            xstrut dif = if dif > 0 then strutX (dif * xProjScaleFac) else mempty
-            ystrut dif = if dif > 0 then strutY (dif * yProjScaleFac) else mempty
+            xstrut dif = if dif > 0 then D.strutX (dif * xProjScaleFac) else mempty
+            ystrut dif = if dif > 0 then D.strutY (dif * yProjScaleFac) else mempty
 
             paddedDiag = ystrut yMaxDiff
                          ===
                          (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
                          ===
                          ystrut yMinDiff
-            clipMin = p2 (xReqMin, yReqMin)
-            clipV   = p2 (xReqMax, yReqMax) .-. clipMin
+            clipMin = D.p2 (xReqMin, yReqMin)
+            clipV   = D.p2 (xReqMax, yReqMax) .-. clipMin
         return $ D.view clipMin clipV paddedDiag
     return $ Renderer plotRenderer tickX tickY
 
@@ -619,7 +620,7 @@ mkRenderer proj sourceScaling Source{..} Plot{..} = do
             -- TODO: is it necessary to scale by the returned diagram size?
             -- maybe can just use the requested/received diffs as struts
             -- requires convention as to diagram size though.
-            (dWidth, dHeight)  = size2D rawDiag
+            (dWidth, dHeight)  = D.size2D rawDiag
 
             xProjScaleFac = let xdiff' = xMax - xMin
                             in if dWidth > 0 && xdiff' > 0 then dWidth / xdiff' else 1
@@ -631,16 +632,16 @@ mkRenderer proj sourceScaling Source{..} Plot{..} = do
             yMinDiff = yMin - yReqMin
             yMaxDiff = yReqMax - yMax
 
-            xstrut dif = if dif > 0 then strutX (dif * xProjScaleFac) else mempty
-            ystrut dif = if dif > 0 then strutY (dif * yProjScaleFac) else mempty
+            xstrut dif = if dif > 0 then D.strutX (dif * xProjScaleFac) else mempty
+            ystrut dif = if dif > 0 then D.strutY (dif * yProjScaleFac) else mempty
 
             paddedDiag = ystrut yMaxDiff
                          ===
                          (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
                          ===
                          ystrut yMinDiff
-            clipMin = p2 (xReqMin, yReqMin)
-            clipV   = p2 (xReqMax, yReqMax) .-. clipMin
+            clipMin = D.p2 (xReqMin, yReqMin)
+            clipV   = D.p2 (xReqMax, yReqMax) .-. clipMin
         return $ D.view clipMin clipV paddedDiag
     return $ Renderer plotRenderer tickX tickY
 
