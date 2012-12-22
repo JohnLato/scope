@@ -6,7 +6,7 @@
 ----------------------------------------------------------------------
 
 {- |
---   Module      : Scope.Sources.ScopeFile
+--   Module      : Scope.Sources.ZoomCache
 --   Copyright   : Conrad Parker, John Lato
 --   License     : BSD3-style (see LICENSE)
 --
@@ -20,7 +20,7 @@
 ----------------------------------------------------------------------
 
 -- | Generate a data @Source@ from a 'ZoomCache' file
-module Scope.Sources.ScopeFile
+module Scope.Sources.ZoomCache
 (
   ScopeFile (..)
 , genScopeFile
