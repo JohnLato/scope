@@ -129,13 +129,10 @@ import Data.Time.Clock
 import qualified Data.Vector.Unboxed as U
 
 -- import Diagrams.Prelude hiding (view,translate,transform, extentX, extentY)
-import Diagrams.Prelude (Backend, R2, Monoid'(..), Monoid(..), Diagram, QDiagram, (|||),(===))
+import Diagrams.Prelude (Backend, R2, Monoid', Monoid(..), QDiagram, (|||),(===))
 import qualified Diagrams.Prelude as D
 import Data.Basis             as V
 import Data.RangeSpace        as V
-import Data.VectorSpace       as V
-import Data.AffineSpace       as V
-import Data.AffineSpace.Point as V
 
 ----------------------------------------------------------------------
 
