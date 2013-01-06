@@ -10,65 +10,42 @@
    Stability   : unstable
    Portability : unknown
 
-   Scope plotting functions
+   zoom-cache/scope interoperability
 -}
 
 module Scope.Numeric.IEEE754 (
-    -- * ScopeRead
-      scopeReadDouble
+  extentsDouble
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Arrow (second)
 import Control.Monad.Trans (MonadIO)
 import Data.Iteratee (Iteratee)
-import Data.Maybe (fromJust)
 import Data.Offset (Offset(..))
+import qualified Data.Vector.Unboxed as U
 import Data.ZoomCache
-import Data.ZoomCache.Multichannel
 import Data.ZoomCache.Numeric
 
 import Scope.Types hiding (b)
 
 ----------------------------------------------------------------------
 
-instance ScopePlot Double where
-    rawLayerPlot = rawLayerPlotListDouble
-    summaryLayerPlot = summaryLayerPlotListDouble
-
-----------------------------------------------------------------------
-
--- | ScopeRead methods to interpret numeric data as Double
-scopeReadDouble :: ScopeRead
-scopeReadDouble = ScopeRead (ReadMethods standardIdentifiers extentsDouble enumListDouble (enumSummaryListDouble 1))
-
 extentsDouble :: (Functor m, MonadIO m)
-              => TrackNo -> Iteratee [Offset Block] m LayerExtents
-extentsDouble trackNo = sdToExtents <$> wholeTrackSummaryListDouble trackNo
+              => TrackNo
+              -> Iteratee [Offset Block] m (Range TimeStamp, Range Double)
+extentsDouble trackNo = sdToExtents <$> wholeTrackSummaryDouble trackNo
     where
-        sdToExtents :: [Summary Double] -> LayerExtents
-        sdToExtents ss = LayerExtents entry exit (maxRange ss)
+        sdToExtents :: Summary Double -> (Range TimeStamp, Range Double)
+        sdToExtents s =  (fromBoundsC entry exit, fromBoundsC yMin yMax )
             where
-                s = head ss
                 entry = summaryEntry s
                 exit = summaryExit s
-
-        maxRange :: [Summary Double] -> Double
-        maxRange = maximum . map yRange
-
-        yRange :: Summary Double -> Double
-        yRange s = 2 * ((abs . numMin . summaryData $ s) + (abs . numMax . summaryData $ s))
+                yMin = numMin $ summaryData s
+                yMax = numMax $ summaryData s
 
 ----------------------------------------------------------------------
 -- Raw data
 
-rawLayerPlotListDouble :: LayerExtents -> RGB -> LayerPlot (TimeStamp, [Double])
-rawLayerPlotListDouble LayerExtents{..} _rgb =
-    LayerFold (plotRawListDouble rangeY) plotRawListInitDouble Nothing
-
-plotRawListInitDouble :: [DrawLayer]
-plotRawListInitDouble = repeat []
-
+{-
 plotRawListDouble :: Double -> LayerFoldFunc (TimeStamp, [Double]) (Maybe [Double])
 plotRawListDouble yRange x w Nothing (ts, ys) = plotRawListDouble yRange x w (Just ys) (ts, ys)
 plotRawListDouble yRange x w (Just ys0) (ts, ys) =
@@ -93,10 +70,12 @@ plotRaw1Double f x w (Just y0) (_ts, y) = (cmds, Just y')
               ]
             ]
         y' = f y
+-}
 
 ----------------------------------------------------------------------
 -- Summary data
 
+{-
 summaryLayerPlotListDouble :: LayerExtents -> RGB -> LayerPlot [Summary Double]
 summaryLayerPlotListDouble LayerExtents{..} rgb =
     LayerFold (plotSummaryListDouble rangeY) (plotSummaryListInitDouble rgb) Nothing
@@ -144,3 +123,4 @@ plotSummary1Double y x w (Just s0) s = (cmds, Just s)
         sd0 = summaryData s0
         sd = summaryData s
 
+-}
