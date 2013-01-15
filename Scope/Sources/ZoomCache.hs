@@ -35,6 +35,7 @@ import qualified Data.IntMap as IM
 import           Data.Iteratee as I
 import qualified Data.Iteratee.IO.OffsetFd as OffI
 import qualified Data.List as L
+import qualified Data.Vector.Unboxed as U
 import           Data.ZoomCache.Numeric
 import           Data.Offset
 
@@ -61,7 +62,24 @@ scopeFileSource filepath = do
     extents <- scopeExtents sf
     return $ Source
         { sourceExtent = return extents
+        , genSourceProvider = error "ScopeFile source uninitialized"
         }
+{-
+   , genSourceProvider :: Scaling (sourceX,sourceY)
+                          -> IO (Hint
+                                -> Range (sourceX)
+                                -> IO (U.Vector (sourceX, sourceY)))
+-}
+
+mkScopeSourceProvider :: ScopeFile TimeStamp y -> Scaling (TimeStamp, y) -> IO (Hint -> Range TimeStamp -> IO (U.Vector (TimeStamp, y)))
+mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
+  return $ \hint range -> do
+    let nSz = unHint hint
+        (minX,maxX) = toBounds range
+        someIter = do
+              seekTimeStamp sfCache (Just minX)
+              return (error "mkScopeSourceProvider: TODO")
+    scopeEnum sf $ enumBlock sfCache =$ enumPackets =$ someIter
 
 scopeExtents :: ScopeFile TimeStamp Double -> IO (Range TimeStamp, Range Double)
 scopeExtents sf@ScopeFile{sfCache} = do
@@ -78,7 +96,7 @@ data ScopeFile extents dtype = ScopeFile
 -- | Create a new ScopeFile.
 genScopeFile :: [IdentifyCodec] -> FilePath -> IO (ScopeFile TimeStamp Double)
 genScopeFile readIdentifiers path = do
-    let f = ScopeFile path undefined
+    let f = ScopeFile path (error "ScopeFile uninitialized")
     sfCache <- scopeEnum f (iterHeaders readIdentifiers)
     return f{sfCache}
 
