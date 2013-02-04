@@ -1,8 +1,11 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# OPTIONS -Wall #-}
 ----------------------------------------------------------------------
 
@@ -36,10 +39,13 @@ import           Data.Iteratee as I
 import qualified Data.Iteratee.IO.OffsetFd as OffI
 import qualified Data.List as L
 import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Generic.Base as B
+import qualified Data.Vector.Generic.Mutable as B
 import           Data.ZoomCache.Numeric
 import           Data.Offset
 
 import           Data.ByteString (ByteString)
+import           Control.Applicative
 import           Control.Monad.CatchIO
 
 scopeBufSize :: Int
@@ -64,22 +70,33 @@ scopeFileSource filepath = do
         { sourceExtent = return extents
         , genSourceProvider = error "ScopeFile source uninitialized"
         }
-{-
-   , genSourceProvider :: Scaling (sourceX,sourceY)
-                          -> IO (Hint
-                                -> Range (sourceX)
-                                -> IO (U.Vector (sourceX, sourceY)))
--}
 
-mkScopeSourceProvider :: ScopeFile TimeStamp y -> Scaling (TimeStamp, y) -> IO (Hint -> Range TimeStamp -> IO (U.Vector (TimeStamp, y)))
+-- probably shouldn't be double, should be min/max/mean or something
+-- also, multi-track files should probably return a tuple or something.
+mkScopeSourceProvider :: (y ~ Double)
+                      => ScopeFile TimeStamp y
+                      -> Scaling (TimeStamp, y)
+                      -> IO (Hint
+                             -> Range TimeStamp
+                             -> IO (U.Vector (TimeStamp, y)))
 mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
   return $ \hint range -> do
     let nSz = unHint hint
         (minX,maxX) = toBounds range
-        someIter = do
+        doInBounds iter = do
               seekTimeStamp sfCache (Just minX)
-              return (error "mkScopeSourceProvider: TODO")
-    scopeEnum sf $ enumBlock sfCache =$ enumPackets =$ someIter
+              joinI $ I.breakE (before (Just maxX)) iter
+        someIter = fmap U.fromList $ joinI $ enumSummaryDouble 1
+                         ><> mapStream (\p -> ( fromJust (timestamp p)
+                                              , numAvg $ summaryData p))
+                         $ stream2stream
+    scopeEnum sf $ enumBlock sfCache =$ doInBounds someIter
+
+deriving instance U.Unbox TimeStamp
+deriving instance (B.Vector U.Vector TimeStamp)
+deriving instance (B.MVector U.MVector TimeStamp)
+
+fromJust = maybe (error "mkScopeSourceProvider: no timestamp") id
 
 scopeExtents :: ScopeFile TimeStamp Double -> IO (Range TimeStamp, Range Double)
 scopeExtents sf@ScopeFile{sfCache} = do

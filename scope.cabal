@@ -42,14 +42,17 @@ Library
     bytestring                >= 0.9     && < 0.11,
     diagrams-lib              >= 0.5     && < 0.7,
     containers                >= 0.2     && < 0.6,
+    iteratee                  == 0.8.9.*,
     mtl                       >= 2.0.0.0 && < 3,
     range-space               >= 0.1     && < 0.2,
+    MonadCatchIO-transformers == 0.3.*,
     mwc-random,
     vector                    >= 0.9     && < 0.11,
     vector-space              >= 0.8     && < 0.9,
     vector-space-points       >= 0.1.1   && < 0.2,
     time,
-    unix
+    unix,
+    zoom-cache                == 1.2.*
 
   Exposed-modules:
     Scope.Axes
@@ -58,6 +61,7 @@ Library
     Scope.Plots.TwoD.Line
     Scope.Sources
     Scope.Sources.SmallSource
+    Scope.Sources.ZoomCache
     Scope.Types
     Scope.View
 

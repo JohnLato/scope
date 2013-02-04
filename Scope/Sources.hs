@@ -19,3 +19,4 @@ module Scope.Sources (
 ) where
 
 import Scope.Sources.SmallSource as M
+import Scope.Sources.ZoomCache as M
