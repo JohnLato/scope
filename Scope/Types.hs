@@ -93,7 +93,7 @@ module Scope.Types (
     -- * Drawing commands
     , Renderer (..)
     , Tick (..)
-
+    , addPlot
 
     -- * Scope
     -- , ScopeFile(..)

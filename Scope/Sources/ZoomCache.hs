@@ -29,6 +29,7 @@ module Scope.Sources.ZoomCache
   ScopeFile (..)
 , genScopeFile
 , scopeFileSource
+, addLayersFromFile
 ) where
 
 import           Scope.Types
@@ -51,15 +52,13 @@ import           Control.Monad.CatchIO
 scopeBufSize :: Int
 scopeBufSize = 1024
 
-{-
-data Source sourceX sourceY = Source
-   { sourceExtent      :: IO (Range sourceX, Range sourceY)
-   , genSourceProvider :: Scaling (sourceX,sourceY)
-                          -> IO (Hint
-                                -> Range (sourceX)
-                                -> IO (U.Vector (sourceX, sourceY)))
-   }
--}
+addLayersFromFile :: Plot TimeStamp Double diagram
+                  -> FilePath
+                  -> Scope diagram ui
+                  -> IO (Scope diagram ui)
+addLayersFromFile plot filepath scope = do
+    source <- scopeFileSource filepath
+    addPlot source plot Sample scope
 
 scopeFileSource :: FilePath -> IO (Source TimeStamp Double)
 scopeFileSource filepath = do
