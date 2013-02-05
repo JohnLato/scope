@@ -57,6 +57,7 @@ Library
   Exposed-modules:
     Scope.Axes
     Scope.Layer
+    Scope.Numeric.IEEE754
     Scope.Plots.TwoD
     Scope.Plots.TwoD.Line
     Scope.Sources
