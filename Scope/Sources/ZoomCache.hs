@@ -111,9 +111,9 @@ data ScopeFile extents dtype = ScopeFile
 
 -- | Create a new ScopeFile.
 genScopeFile :: [IdentifyCodec] -> FilePath -> IO (ScopeFile TimeStamp Double)
-genScopeFile readIdentifiers path = do
+genScopeFile identifiers path = do
     let f = ScopeFile path (error "ScopeFile uninitialized")
-    sfCache <- scopeEnum f (iterHeaders readIdentifiers)
+    sfCache <- scopeEnum f (iterHeaders identifiers)
     return f{sfCache}
 
 scopeEnum :: MonadCatchIO m
@@ -121,7 +121,7 @@ scopeEnum :: MonadCatchIO m
           -> I.Iteratee (Offset ByteString) m a
           -> m a
 scopeEnum ScopeFile{..} iter =
-    OffI.enumFileRandomOBS scopeBufSize sfPath iter >>= I.run
+    I.run =<< OffI.enumFileRandomOBS scopeBufSize sfPath iter
 
 instance AffineSpace TimeStamp where
     type Diff TimeStamp = Double
