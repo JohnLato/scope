@@ -122,8 +122,3 @@ scopeEnum :: MonadCatchIO m
           -> m a
 scopeEnum ScopeFile{..} iter =
     I.run =<< OffI.enumFileRandomOBS scopeBufSize sfPath iter
-
-instance AffineSpace TimeStamp where
-    type Diff TimeStamp = Double
-    TS l .-. TS r = l .-. r
-    TS t .+^ diff = TS $ t .+^ diff
