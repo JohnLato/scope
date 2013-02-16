@@ -18,22 +18,30 @@ module Scope.Numeric.IEEE754 (
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Monad.Trans (MonadIO)
+import Control.Monad.Trans (MonadIO(..))
+import Data.AdditiveGroup
+import Data.AffineSpace
 import Data.Iteratee (Iteratee)
+import qualified Data.Iteratee as I
 import Data.Offset (Offset(..))
 import qualified Data.Vector.Unboxed as U
 import Data.ZoomCache
-import Data.ZoomCache.Numeric
+import Data.ZoomCache.Numeric hiding (wholeTrackSummaryDouble)
+import Data.ZoomCache.Multichannel.List
 
 import Scope.Types hiding (b)
+import Data.Semigroup.Foldable
+import qualified Data.List.NonEmpty as NE
+import Data.Maybe
 
 ----------------------------------------------------------------------
 
 extentsDouble :: (Functor m, MonadIO m)
               => TrackNo
               -> Iteratee [Offset Block] m (Range TimeStamp, Range Double)
-extentsDouble trackNo = sdToExtents <$> wholeTrackSummaryDouble trackNo
+extentsDouble trackNo = mergeAll <$> wholeTrackSummaryListDouble trackNo
     where
+        mergeAll = foldMap1 sdToExtents . NE.fromList
         sdToExtents :: Summary Double -> (Range TimeStamp, Range Double)
         sdToExtents s =  (fromBoundsC entry exit, fromBoundsC yMin yMax )
             where
