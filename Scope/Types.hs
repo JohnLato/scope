@@ -12,6 +12,9 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 {-# OPTIONS -Wall -fno-warn-orphans #-}
 ----------------------------------------------------------------------
 {- |
@@ -62,6 +65,8 @@ module Scope.Types (
     , CanvasP
     , DataP
 
+    , SIVec(..)
+
     , Transform(..)
     -- , mkTransform
     -- , mkTSDataTransform
@@ -83,6 +88,7 @@ module Scope.Types (
     , Hint (..)
 
     -- * Drawings
+    , ScopeDiagram
     , Plot (..)
     , PlotInfo (..)
     , Layer (..)
@@ -404,6 +410,8 @@ data Source sourceX sourceY = Source
 
 ----------------------------------------------------------------------
 
+type ScopeDiagram b m = QDiagram b R2 m
+
 -- | A @PlotInfo@ contains all non-graphical information about a plot.
 data PlotInfo = PlotInfo
    { piLegendX   :: String
@@ -490,35 +498,50 @@ viewInit ui = View
 addPlot :: (InnerSpace sourceX, InnerSpace sourceY
               ,U.Unbox sourceX, U.Unbox sourceY
               ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
-              ,Num sourceX, Num sourceY
+              ,SIVec sourceX, SIVec sourceY
               ,Backend b R2, Monoid' m)
         => Source sourceX sourceY
-        -> Plot sourceX sourceY (QDiagram b R2 m)
+        -> Plot sourceX sourceY (ScopeDiagram b m)
         -> Scaling (sourceX, sourceY)
-        -> Scope (QDiagram b R2 m) ui
-        -> IO (Scope (QDiagram b R2 m) ui)
+        -> Scope (ScopeDiagram b m) ui
+        -> IO (Scope (ScopeDiagram b m) ui)
 addPlot source plot sourceScaling s@Scope{..} = do
     layerRenderer <- mkRenderer2D sourceScaling source plot
     let newLayer = Layer{layerPlotInfo=plotInfo plot,layerRenderer}
         newScope = s{layers=layers++[newLayer]}
     return newScope
 
+-- | SIVec is a class for a vector that corresponds to a multiplicative
+-- identity for an 'InnerSpace'.  In particular,
+-- 
+-- > (v <.> sIdent) *^ sIdent == v
+
+class SIVec v where
+    sIdent :: v
+
+instance SIVec Double where
+    sIdent = 1
+
+instance SIVec Float where
+    sIdent = 1
+
 -- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
-mkRenderer2D :: (InnerSpace sourceX, InnerSpace sourceY
+mkRenderer2D :: forall sourceX sourceY b m.
+              (InnerSpace sourceX, InnerSpace sourceY
               ,U.Unbox sourceX, U.Unbox sourceY
               ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
-              ,Num sourceX, Num sourceY
+              ,SIVec sourceX, SIVec sourceY
               ,Backend b R2, Monoid' m)
            => Scaling (sourceX, sourceY)
            -> Source sourceX sourceY
-           -> Plot sourceX sourceY (QDiagram b R2 m)
-           -> IO (Renderer (QDiagram b R2 m))
+           -> Plot sourceX sourceY (ScopeDiagram b m)
+           -> IO (Renderer (ScopeDiagram b m))
 mkRenderer2D sourceScaling Source{..} Plot{..} = do
     mkSource <- genSourceProvider sourceScaling
     let tickX = undefined
         tickY = undefined
-        xProj = 1
-        yProj = 1
+        xProj = sIdent
+        yProj = sIdent
     let plotRenderer hint xRng yRng = do
         (xRngAbs, yRngAbs) <- sourceExtent
         let (xProjMin,xProjMax) = toBounds $ (<.> xProj) <$> xRngAbs
@@ -589,8 +612,8 @@ mkRenderer :: (InnerSpace sourceX, InnerSpace sourceY
            => IO (sourceX,sourceY)     -- unit vectors in the direction of the x/y views
            -> Scaling (sourceX, sourceY)
            -> Source sourceX sourceY
-           -> Plot sourceX sourceY (QDiagram b R2 m)
-           -> IO (Renderer (QDiagram b R2 m))
+           -> Plot sourceX sourceY (ScopeDiagram b m)
+           -> IO (Renderer (ScopeDiagram b m))
 mkRenderer proj sourceScaling Source{..} Plot{..} = do
     mkSource <- genSourceProvider sourceScaling
     let tickX = undefined

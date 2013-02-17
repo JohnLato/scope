@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -44,6 +45,7 @@ import qualified Data.Vector.Generic.Base as B
 import qualified Data.Vector.Generic.Mutable as B
 import           Data.ZoomCache.Numeric
 import           Data.Offset
+import           Diagrams.Prelude (Backend, R2, Monoid')
 
 import           Data.ByteString (ByteString)
 import           Control.Applicative
@@ -52,10 +54,14 @@ import           Control.Monad.CatchIO
 scopeBufSize :: Int
 scopeBufSize = 1024
 
-addLayersFromFile :: Plot TimeStamp Double diagram
+instance SIVec TimeStamp where
+    sIdent = TS 1
+
+addLayersFromFile :: (Backend b R2, Monoid' m)
+                  => Plot TimeStamp Double (ScopeDiagram b m)
                   -> FilePath
-                  -> Scope diagram ui
-                  -> IO (Scope diagram ui)
+                  -> Scope (ScopeDiagram b m) ui
+                  -> IO (Scope (ScopeDiagram b m) ui)
 addLayersFromFile plot filepath scope = do
     source <- scopeFileSource filepath
     addPlot source plot Sample scope
@@ -67,7 +73,7 @@ scopeFileSource filepath = do
     extents <- scopeExtents sf
     return $ Source
         { sourceExtent = return extents
-        , genSourceProvider = error "ScopeFile source uninitialized"
+        , genSourceProvider = mkScopeSourceProvider sf
         }
 
 -- probably shouldn't be double, should be min/max/mean or something
