@@ -44,6 +44,7 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Generic.Base as B
 import qualified Data.Vector.Generic.Mutable as B
 import           Data.ZoomCache.Numeric
+import           Data.ZoomCache.Multichannel
 import           Data.Offset
 import           Diagrams.Prelude (Backend, R2, Monoid')
 
@@ -90,8 +91,9 @@ mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
         (minX,maxX) = toBounds range
         doInBounds iter = do
               seekTimeStamp sfCache (Just minX)
-              joinI $ I.breakE (before (Just maxX)) iter
-        someIter = fmap U.fromList $ joinI $ enumSummaryDouble 1
+              joinI $ I.breakE (not . before (Just maxX)) iter
+        someIter = fmap U.fromList $ joinI $ enumSummaryListDouble 1
+                         ><> mapChunks concat -- TODO: handle multichannel
                          ><> mapStream (\p -> ( fromJust (timestamp p)
                                               , numAvg $ summaryData p))
                          $ stream2stream
