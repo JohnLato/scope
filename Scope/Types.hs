@@ -487,15 +487,21 @@ viewInit ui = View
     , viewUI   = ui
     }
 
-addPlot :: Source sourceX sourceY
-        -> Plot sourceX sourceY diagram
+addPlot :: (InnerSpace sourceX, InnerSpace sourceY
+              ,U.Unbox sourceX, U.Unbox sourceY
+              ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
+              ,Num sourceX, Num sourceY
+              ,Backend b R2, Monoid' m)
+        => Source sourceX sourceY
+        -> Plot sourceX sourceY (QDiagram b R2 m)
         -> Scaling (sourceX, sourceY)
-        -> Scope diagram ui
-        -> IO (Scope diagram ui)
-addPlot Source{..} Plot{..} sourceScaling s@Scope{..} = do
-    prov <- genSourceProvider sourceScaling
-    renderFn <- error "not yet implemented"
-    return undefined
+        -> Scope (QDiagram b R2 m) ui
+        -> IO (Scope (QDiagram b R2 m) ui)
+addPlot source plot sourceScaling s@Scope{..} = do
+    layerRenderer <- mkRenderer2D sourceScaling source plot
+    let newLayer = Layer{layerPlotInfo=plotInfo plot,layerRenderer}
+        newScope = s{layers=layers++[newLayer]}
+    return newScope
 
 -- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
 mkRenderer2D :: (InnerSpace sourceX, InnerSpace sourceY
