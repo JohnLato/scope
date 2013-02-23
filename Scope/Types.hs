@@ -428,6 +428,7 @@ data Plot sourceX sourceY diag = Plot
    { makePlot    :: U.Vector (sourceX,sourceY) -> diag
    , plotInfo    :: PlotInfo
    }
+   deriving (Eq, Functor)
 
 -- | An empty @Plot@.  Creates an empty diagram regardless of input.
 emptyPlot :: Monoid diag => Plot a b diag
