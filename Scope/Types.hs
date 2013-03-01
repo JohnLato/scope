@@ -124,11 +124,12 @@ module Scope.Types (
 ) where
 
 import Control.Applicative (Applicative(..), (<$>))
-import Control.Arrow (first, (***))
+import Control.Arrow (first, (&&&), (***))
 
 import Data.List (zipWith4)
 import Data.Data (Data, Typeable)
 import Data.Map (Map)
+import Data.Maybe (fromMaybe)
 import qualified Data.Map as Map
 import Data.Time.Clock
 
@@ -496,10 +497,11 @@ viewInit ui = View
     , viewUI   = ui
     }
 
-addPlot :: (InnerSpace sourceX, InnerSpace sourceY
+addPlot :: (InnerSpace sourceX
               ,U.Unbox sourceX, U.Unbox sourceY
-              ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
-              ,SIVec sourceX, SIVec sourceY
+              ,Ord sourceX, Ord sourceY
+              ,Scalar sourceX ~ Double
+              ,SIVec sourceX
               ,Backend b R2, Monoid' m)
         => Source sourceX sourceY
         -> Plot sourceX sourceY (ScopeDiagram b m)
@@ -528,10 +530,11 @@ instance SIVec Float where
 
 -- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
 mkRenderer2D :: forall sourceX sourceY b m.
-              (InnerSpace sourceX, InnerSpace sourceY
+              (InnerSpace sourceX
               ,U.Unbox sourceX, U.Unbox sourceY
-              ,Scalar sourceX ~ Double, Scalar sourceY ~ Double
-              ,SIVec sourceX, SIVec sourceY
+              ,Ord sourceX, Ord sourceY
+              ,Scalar sourceX ~ Double
+              ,SIVec sourceX
               ,Backend b R2, Monoid' m)
            => Scaling (sourceX, sourceY)
            -> Source sourceX sourceY
@@ -542,65 +545,48 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
     let tickX = undefined
         tickY = undefined
         xProj = sIdent
-        yProj = sIdent
     let plotRenderer hint xRng yRng = do
         (xRngAbs, yRngAbs) <- sourceExtent
-        let (xProjMin,xProjMax) = toBounds $ (<.> xProj) <$> xRngAbs
-            (yProjMin,yProjMax) = toBounds $ (<.> yProj) <$> yRngAbs
+        let xProjP = toBounds $ (<.> xProj) <$> xRngAbs
+            b2l r   = let (a,b) = toBounds r in [a,b]
+            rngVec  = U.fromListN 2 $ zip (b2l xRngAbs) (b2l yRngAbs)
+            (rngExtX,rngExtY) = (D.extentX &&& D.extentY) $ makePlot rngVec
+            rngWidth = maybe 0 (\(mn, mx) -> mx-mn) rngExtX
+            rngHeight = maybe 0 (\(mn, mx) -> mx-mn) rngExtY
 
-            xReqS = (lerp xProjMin xProjMax . unDataX) <$> xRng
+            xReqS = (uncurry lerp xProjP . unDataX) <$> xRng
             xReq = (*^ xProj) <$> xReqS
-            (xReqMin,xReqMax) = toBounds xReqS
-
-            yReqS = (lerp yProjMin yProjMax . unDataY) <$> yRng
-            (yReqMin,yReqMax) = toBounds yReqS
 
         datavec <- mkSource hint xReq
 
-        let (!xMin,!xMax,!yMin,!yMax) = case U.length datavec of
-                0 -> let x = xReqMin
-                         y = yProjMin
-                     in (x,x,y,y)
-                1 -> let (x,y) = datavec U.! 0
-                         xAdj = x <.> xProj
-                         yAdj = y <.> yProj
-                     in (xAdj,xAdj,yAdj,yAdj)
-                _ -> let (xh,yh) = datavec U.! 0
-                         xh' = xh <.> xProj
-                         yh' = yh <.> yProj
-                         f (!x0,!x1,!y0,!y1) (x,y) = (min x0 (x <.> xProj)
-                                                     ,max x1 (x <.> xProj)
-                                                     ,min y0 (y <.> yProj)
-                                                     ,max y1 (y <.> yProj))
-                     in U.foldl' f (xh',xh',yh',yh') datavec
-
         let rawDiag    = makePlot datavec
-            -- TODO: is it necessary to scale by the returned diagram size?
-            -- maybe can just use the requested/received diffs as struts
-            -- requires convention as to diagram size though.
-            (dWidth, dHeight)  = D.size2D rawDiag
+            (diagExtX,diagExtY) = (D.extentX &&& D.extentY) rawDiag
 
-            xProjScaleFac = let xdiff' = xMax - xMin
-                            in if dWidth > 0 && xdiff' > 0 then dWidth / xdiff' else 1
-            yProjScaleFac = let ydiff' = yMax - yMin
-                            in if dHeight > 0 && ydiff' > 0 then dHeight / ydiff' else 1
+            calcStruts mkStrut ext'm d'm = fromMaybe (mempty,mempty) $ do
+                (mxLo,mxHi) <- ext'm
+                (dLo,dHi)   <- d'm
+                return (mkStrut $ dLo-mxLo,mkStrut $ mxHi-dHi)
+          
+            (xMinStrut,xMaxStrut) = calcStruts D.strutX rngExtX diagExtX
+            (yMinStrut,yMaxStrut) = calcStruts D.strutY rngExtY diagExtY
 
-            xMinDiff = xMin - xReqMin
-            xMaxDiff = xReqMax - xMax
-            yMinDiff = yMin - yReqMin
-            yMaxDiff = yReqMax - yMax
-
-            xstrut dif = if dif > 0 then D.strutX (dif * xProjScaleFac) else mempty
-            ystrut dif = if dif > 0 then D.strutY (dif * yProjScaleFac) else mempty
-
-            paddedDiag = ystrut yMaxDiff
+            paddedDiag = yMaxStrut
                          ===
-                         (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
+                         (xMinStrut ||| makePlot datavec ||| xMaxStrut)
                          ===
-                         ystrut yMinDiff
-            clipMin = D.p2 (xReqMin, yReqMin)
-            clipV   = D.p2 (xReqMax, yReqMax) .-. clipMin
-        return $ D.view clipMin clipV paddedDiag
+                         yMinStrut
+            (clipMin,clipMax) = let (xmn,xmx) = toBounds ((*rngWidth) . unDataX
+                                                          <$> xRng)
+                                    (ymn,ymx) = toBounds ((*rngHeight) . unDataY
+                                                          <$> yRng)
+                                    xOff = maybe 0 fst rngExtX
+                                    yOff = maybe 0 fst rngExtY
+                                    xmn' = xOff+xmn
+                                    xmx' = xOff+xmx
+                                    ymn' = yOff+ymn
+                                    ymx' = yOff+ymx
+                                in (D.p2 (xmn',ymn'),D.p2 (xmx',ymx'))
+        return $ D.view clipMin (clipMax .-. clipMin) paddedDiag
     return $ Renderer plotRenderer tickX tickY
 
 -- | create a 'Renderer' for the provided 'Source' and 'Plot'
