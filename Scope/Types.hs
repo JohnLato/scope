@@ -472,6 +472,7 @@ data Tick b = Tick
 data Scope diagram ui = Scope
     { view   :: View ui
     , layers :: [Layer diagram]
+    , scopeCache :: Maybe (Range DataX, Range DataY, diagram)
     }
 
 data View ui = View
@@ -483,7 +484,7 @@ data View ui = View
     }
 
 scopeNew :: ui -> Scope diagram ui
-scopeNew ui = Scope {view=viewInit ui, layers=[]}
+scopeNew ui = Scope {view=viewInit ui, layers=[], scopeCache=Nothing}
 
 scopeModifyView :: (View ui -> View ui) -> Scope diag ui -> Scope diag ui
 scopeModifyView f scope = scope{ view = f (view scope) }
