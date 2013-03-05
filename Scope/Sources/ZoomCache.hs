@@ -35,6 +35,7 @@ module Scope.Sources.ZoomCache
 
 import           Scope.Types
 import           Scope.Numeric.IEEE754
+import           Scope.Layer
 
 import qualified Data.IntMap as IM
 import           Data.Iteratee as I
@@ -65,7 +66,7 @@ addLayersFromFile :: (Backend b R2, Monoid' m)
                   -> IO (Scope (ScopeDiagram b m) ui)
 addLayersFromFile plot filepath scope = do
     source <- scopeFileSource filepath
-    addPlot source plot Sample scope
+    addPlot source plot Sample (clearCache scope)
 
 scopeFileSource :: FilePath -> IO (Source TimeStamp Double)
 scopeFileSource filepath = do
