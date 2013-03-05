@@ -1,3 +1,4 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS -Wall #-}
 ----------------------------------------------------------------------
@@ -16,7 +17,9 @@
 ----------------------------------------------------------------------
 
 module Scope.Layer (
-      scopeRender
+  scopeRender
+, scopeRender'
+, setCache
 ) where
 
 import Control.Monad
@@ -27,13 +30,31 @@ import Scope.Types
 
 ----------------------------------------------------------------
 
--- | Generate the diagram from a Scope, using the provided width value
+-- | Generate the diagram from a Scope, using the provided width value.
+--
+-- The cache will be used if it's current.
 scopeRender :: Monoid' m => Int -> Scope (QDiagram b R2 m) ui -> IO (QDiagram b R2 m)
-scopeRender width Scope{..} = do
+scopeRender = scopeRender' True
+
+scopeRender' :: Monoid' m => Bool -> Int -> Scope (QDiagram b R2 m) ui -> IO (QDiagram b R2 m)
+scopeRender' useCache width Scope{..} = do
     let xRng = viewX view
         yRng = viewY view
         hint = Hint width
-    foldM (\diag layer -> (`atop` diag) <$> layerRender layer hint xRng yRng) mempty layers
+    case useCache of
+        True | Just (xCache, yCache, diagCache) <- scopeCache
+          , xCache == xRng
+          , yCache == yRng -> return diagCache
+        otherwise -> foldM (\diag layer -> (`atop` diag) <$> layerRender layer hint xRng yRng) mempty layers
+
+setCache :: Monoid' m
+         => QDiagram b R2 m
+         -> Scope (QDiagram b R2 m) ui
+         -> Scope (QDiagram b R2 m) ui
+setCache diag scope@Scope{view} = scope{scopeCache}
+  where
+    View{viewX,viewY} = view
+    scopeCache = Just (viewX,viewY,diag)
 
 -- | render a layer to a diagram with size in the range 0-1 (square), with the
 -- local origin centered in the middle.
