@@ -20,6 +20,7 @@ module Scope.Layer (
   scopeRender
 , scopeRender'
 , setCache
+, clearCache
 ) where
 
 import Control.Monad
@@ -55,6 +56,9 @@ setCache diag scope@Scope{view} = scope{scopeCache}
   where
     View{viewX,viewY} = view
     scopeCache = Just (viewX,viewY,diag)
+
+clearCache :: Scope diag ui -> Scope diag ui
+clearCache scope = scope{scopeCache=Nothing}
 
 -- | render a layer to a diagram with size in the range 0-1 (square), with the
 -- local origin centered in the middle.
