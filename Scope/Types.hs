@@ -91,7 +91,6 @@ module Scope.Types (
     , ScopeDiagram
     , Plot (..)
     , PlotInfo (..)
-    , Layer (..)
     , emptyPlot
     , mapPlot
     , emptyPlotInfo
@@ -113,12 +112,7 @@ module Scope.Types (
     , View(..)
 
     -- * Layers
-    -- , Layer(..)
-    -- , LayerExtents(..)
-    -- , LayerPlot(..)
-    -- , LayerMapFunc
-    -- , LayerFoldFunc
-    -- , ScopeLayer(..)
+    , Layer(..)
     -- * Reexports
     , module V
 ) where
