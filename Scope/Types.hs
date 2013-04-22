@@ -117,14 +117,11 @@ module Scope.Types (
     , module V
 ) where
 
-import Control.Applicative (Applicative(..), (<$>))
-import Control.Arrow (first, (&&&), (***))
+import Control.Applicative ((<$>))
+import Control.Arrow ((&&&), (***))
 
-import Data.List (zipWith4)
 import Data.Data (Data, Typeable)
-import Data.Map (Map)
 import Data.Maybe (fromMaybe)
-import qualified Data.Map as Map
 import Data.Time.Clock
 
 import qualified Data.Vector.Unboxed as U
