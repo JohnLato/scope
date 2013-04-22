@@ -28,6 +28,7 @@
 module Scope.Sources.ZoomCache
 (
   ScopeFile (..)
+, ScopeResult
 , genScopeFile
 , scopeFileSource
 , addLayersFromFile
@@ -59,8 +60,12 @@ scopeBufSize = 1024
 instance SIVec TimeStamp where
     sIdent = TS 1
 
+type ScopeResult y = (y,y,y)
+
+makeResult x = let s = summaryData x in (numAvg s, numMin s, numMax s)
+
 addLayersFromFile :: (Backend b R2, Monoid' m)
-                  => Plot TimeStamp Double (ScopeDiagram b m)
+                  => Plot TimeStamp (ScopeResult Double) (ScopeDiagram b m)
                   -> FilePath
                   -> Scope (ScopeDiagram b m) ui
                   -> IO (Scope (ScopeDiagram b m) ui)
@@ -68,7 +73,7 @@ addLayersFromFile plot filepath scope = do
     source <- scopeFileSource filepath
     addPlot source plot Sample (clearCache scope)
 
-scopeFileSource :: FilePath -> IO (Source TimeStamp Double)
+scopeFileSource :: FilePath -> IO (Source TimeStamp (ScopeResult Double))
 scopeFileSource filepath = do
     sf <- genScopeFile standardIdentifiers filepath
     -- TODO: rescan extents if the file has been modified
@@ -82,10 +87,10 @@ scopeFileSource filepath = do
 -- also, multi-track files should probably return a tuple or something.
 mkScopeSourceProvider :: (y ~ Double)
                       => ScopeFile TimeStamp y
-                      -> Scaling (TimeStamp, y)
+                      -> Scaling (TimeStamp, ScopeResult y)
                       -> IO (Hint
                              -> Range TimeStamp
-                             -> IO (U.Vector (TimeStamp, y)))
+                             -> IO (U.Vector (TimeStamp, ScopeResult y)))
 mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
   return $ \hint range -> do
     let nSz = unHint hint
@@ -96,7 +101,7 @@ mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
         someIter = fmap U.fromList $ joinI $ enumSummaryListDouble 1
                          ><> mapChunks concat -- TODO: handle multichannel
                          ><> mapStream (\p -> ( fromJust (timestamp p)
-                                              , numAvg $ summaryData p))
+                                              , makeResult p))
                          $ stream2stream
     scopeEnum sf $ enumBlock sfCache =$ doInBounds someIter
 
@@ -106,12 +111,16 @@ deriving instance (B.MVector U.MVector TimeStamp)
 
 fromJust = maybe (error "mkScopeSourceProvider: no timestamp") id
 
-scopeExtents :: ScopeFile TimeStamp Double -> IO (Range TimeStamp, Range Double)
+scopeExtents
+    :: ScopeFile TimeStamp Double
+    -> IO (Range TimeStamp, Range (ScopeResult Double))
 scopeExtents sf@ScopeFile{sfCache} = do
     let tracks = IM.keys $ cfSpecs sfCache
     extents <- mapM (scopeEnum sf . I.joinI . enumBlock sfCache . extentsDouble)
                     tracks
-    return $ L.foldl1' (\(l1,r1) (l2,r2) -> (unionRange l1 l2, unionRange r1 r2)) extents
+    let toResult r = let (lo,hi) = toBounds r
+                     in fromSpan ((lo,(lo+hi)/2,hi), (0,0,0))
+    return $ toResult <$> L.foldl1' (\(l1,r1) (l2,r2) -> (unionRange l1 l2, unionRange r1 r2)) extents
 
 data ScopeFile extents dtype = ScopeFile
     { sfPath  :: FilePath
