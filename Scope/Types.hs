@@ -42,7 +42,7 @@
     |         |                                 |              |
     +---------+---------------------------------+--------------+
               |                                 |
-               ---------------------------------   <- CanvasY -1.0
+               ---------------------------------   <- CanvasY 1.0
 @
 
 -}
@@ -543,8 +543,6 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
             b2l r   = let (a,b) = toBounds r in [a,b]
             rngVec  = U.fromListN 2 $ zip (b2l xRngAbs) (b2l yRngAbs)
             (rngExtX,rngExtY) = (D.extentX &&& D.extentY) $ makePlot rngVec
-            rngWidth = maybe 0 (\(mn, mx) -> mx-mn) rngExtX
-            rngHeight = maybe 0 (\(mn, mx) -> mx-mn) rngExtY
 
             xReqS = (uncurry lerp xProjP . unDataX) <$> xRng
             xReq = (*^ xProj) <$> xReqS
@@ -567,18 +565,12 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
                          (xMinStrut ||| makePlot datavec ||| xMaxStrut)
                          ===
                          yMinStrut
-            (clipMin,clipMax) = let (xmn,xmx) = toBounds ((*rngWidth) . unDataX
-                                                          <$> xRng)
-                                    (ymn,ymx) = toBounds ((*rngHeight) . unDataY
-                                                          <$> yRng)
-                                    xOff = maybe 0 fst rngExtX
-                                    yOff = maybe 0 fst rngExtY
-                                    xmn' = xOff+xmn
-                                    xmx' = xOff+xmx
-                                    ymn' = yOff+ymn
-                                    ymx' = yOff+ymx
-                                in (D.p2 (xmn',ymn'),D.p2 (xmx',ymx'))
-        return $ D.view clipMin (clipMax .-. clipMin) paddedDiag
+            scaleTo1 = D.scaleToX 1 . D.scaleToY 1
+            (clipStart,clipRng) = (((origin .+^) . d2r) *** d2r)
+                                  . toSpan $ range2D xRng yRng
+            d2r D2V{xAxis,yAxis} = D.r2 (unDataX xAxis,unDataY yAxis)
+        return . scaleTo1 . D.view clipStart clipRng
+               . D.alignBL $ scaleTo1 paddedDiag
     return $ Renderer plotRenderer tickX tickY
 
 -- | create a 'Renderer' for the provided 'Source' and 'Plot'
