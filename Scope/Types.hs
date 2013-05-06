@@ -562,7 +562,7 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
 
             paddedDiag = yMaxStrut
                          ===
-                         (xMinStrut ||| makePlot datavec ||| xMaxStrut)
+                         (xMinStrut ||| rawDiag ||| xMaxStrut)
                          ===
                          yMinStrut
             scaleTo1 = D.scaleToX 1 . D.scaleToY 1
