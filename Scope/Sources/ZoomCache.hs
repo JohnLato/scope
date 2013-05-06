@@ -53,6 +53,7 @@ import           Diagrams.Prelude (Backend, R2, Monoid')
 import           Data.ByteString (ByteString)
 import           Control.Applicative
 import           Control.Monad.CatchIO
+import Control.Monad.Trans
 
 scopeBufSize :: Int
 scopeBufSize = 1024
@@ -83,8 +84,6 @@ scopeFileSource filepath = do
         , genSourceProvider = mkScopeSourceProvider sf
         }
 
--- probably shouldn't be double, should be min/max/mean or something
--- also, multi-track files should probably return a tuple or something.
 mkScopeSourceProvider :: (y ~ Double)
                       => ScopeFile TimeStamp y
                       -> Scaling (TimeStamp, ScopeResult y)
@@ -97,7 +96,9 @@ mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
         (minX,maxX) = toBounds range
         doInBounds iter = do
               seekTimeStamp sfCache (Just minX)
-              joinI $ I.breakE (not . before (Just maxX)) iter
+              I.dropWhileB (before (Just minX))
+              iter' <- I.breakE (not . before (Just maxX)) iter
+              joinI $ I.takeUpTo 1 iter'
         someIter = fmap U.fromList $ joinI $ enumSummaryListDouble 1
                          ><> mapChunks concat -- TODO: handle multichannel
                          ><> mapStream (\p -> ( fromJust (timestamp p)
