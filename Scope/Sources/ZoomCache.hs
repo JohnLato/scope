@@ -58,9 +58,6 @@ import Control.Monad.Trans
 scopeBufSize :: Int
 scopeBufSize = 1024
 
-instance SIVec TimeStamp where
-    sIdent = TS 1
-
 type ScopeResult y = (y,y,y)
 
 makeResult x = let s = summaryData x in (numAvg s, numMin s, numMax s)

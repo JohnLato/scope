@@ -65,22 +65,15 @@ module Scope.Types (
     , CanvasP
     , DataP
 
-    , SIVec(..)
-
     , Transform(..)
     -- , mkTransform
     -- , mkTSDataTransform
 
-    , translateRange
     , unionBounds'm
-    , unionRange
     , restrictRange
     , restrictRange01
     , zoomRange
     , viewRange
-
-    , extentX
-    , extentY
 
     -- * Data Sources
     , Source (..)
@@ -118,10 +111,9 @@ module Scope.Types (
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Arrow ((&&&), (***))
+import Control.Arrow ((***))
 
 import Data.Data (Data, Typeable)
-import Data.Maybe (fromMaybe)
 import Data.Time.Clock
 
 import qualified Data.Vector.Unboxed as U
@@ -489,11 +481,10 @@ viewInit ui = View
     , viewUI   = ui
     }
 
-addPlot :: (InnerSpace sourceX
+addPlot :: (VectorSpace sourceX
               ,U.Unbox sourceX, U.Unbox sourceY
               ,Ord sourceX, Ord sourceY
               ,Scalar sourceX ~ Double
-              ,SIVec sourceX
               ,Backend b R2, Monoid' m)
         => Source sourceX sourceY
         -> Plot sourceX sourceY (ScopeDiagram b m)
@@ -506,27 +497,12 @@ addPlot source plot sourceScaling s@Scope{..} = do
         newScope = s{layers=layers++[newLayer]}
     return newScope
 
--- | SIVec is a class for a vector that corresponds to a multiplicative
--- identity for an 'InnerSpace'.  In particular,
--- 
--- > (v <.> sIdent) *^ sIdent == v
-
-class SIVec v where
-    sIdent :: v
-
-instance SIVec Double where
-    sIdent = 1
-
-instance SIVec Float where
-    sIdent = 1
-
 -- | A simplified version of 'mkRenderer' for 2-dimensional numeric data
 mkRenderer2D :: forall sourceX sourceY b m.
-              (InnerSpace sourceX
+              (VectorSpace sourceX
               ,U.Unbox sourceX, U.Unbox sourceY
               ,Ord sourceX, Ord sourceY
               ,Scalar sourceX ~ Double
-              ,SIVec sourceX
               ,Backend b R2, Monoid' m)
            => Scaling (sourceX, sourceY)
            -> Source sourceX sourceY
@@ -536,39 +512,22 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
     mkSource <- genSourceProvider sourceScaling
     let tickX = undefined
         tickY = undefined
-        xProj = sIdent
     let plotRenderer hint xRng yRng = do
         (xRngAbs, yRngAbs) <- sourceExtent
-        let xProjP = toBounds $ (<.> xProj) <$> xRngAbs
-            b2l r   = let (a,b) = toBounds r in [a,b]
+        let b2l r   = let (a,b) = toBounds r in [a,b]
             rngVec  = U.fromListN 2 $ zip (b2l xRngAbs) (b2l yRngAbs)
-            (rngExtX,rngExtY) = (D.extentX &&& D.extentY) $ makePlot rngVec
-
-            xReqS = (uncurry lerp xProjP . unDataX) <$> xRng
-            xReq = (*^ xProj) <$> xReqS
+            rngPlot = makePlot rngVec
+            xReq = (uncurry lerp (toBounds xRngAbs) . unDataX) <$> xRng
 
         datavec <- mkSource hint xReq
 
         let rawDiag    = makePlot datavec
-            (diagExtX,diagExtY) = (D.extentX &&& D.extentY) rawDiag
-
-            calcStruts mkStrut ext'm d'm = fromMaybe (mempty,mempty) $ do
-                (mxLo,mxHi) <- ext'm
-                (dLo,dHi)   <- d'm
-                return (mkStrut $ dLo-mxLo,mkStrut $ mxHi-dHi)
-          
-            (xMinStrut,xMaxStrut) = calcStruts D.strutX rngExtX diagExtX
-            (yMinStrut,yMaxStrut) = calcStruts D.strutY rngExtY diagExtY
-
-            paddedDiag = yMaxStrut
-                         ===
-                         (xMinStrut ||| rawDiag ||| xMaxStrut)
-                         ===
-                         yMinStrut
+            paddedDiag = rawDiag D.# D.withEnvelope rngPlot
             scaleTo1 = D.scaleToX 1 . D.scaleToY 1
             (clipStart,clipRng) = (((origin .+^) . d2r) *** d2r)
                                   . toSpan $ range2D xRng yRng
             d2r D2V{xAxis,yAxis} = D.r2 (unDataX xAxis,unDataY yAxis)
+
         return . scaleTo1 . D.view clipStart clipRng
                . D.alignBL $ scaleTo1 paddedDiag
     return $ Renderer plotRenderer tickX tickY
