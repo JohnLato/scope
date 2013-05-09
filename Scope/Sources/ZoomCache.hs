@@ -120,7 +120,7 @@ scopeExtents sf@ScopeFile{sfCache} = do
     extents <- mapM (scopeEnum sf . I.joinI . enumBlock sfCache . extentsDouble)
                     tracks
     let toResult r = let (lo,hi) = toBounds r
-                     in fromSpan ((lo,(lo+hi)/2,hi), (0,0,0))
+                     in fromBounds ((lo,lo,lo), (hi,hi,hi))
     return $ toResult <$> L.foldl1' (\(l1,r1) (l2,r2) -> (unionRange l1 l2, unionRange r1 r2)) extents
 
 data ScopeFile extents dtype = ScopeFile
