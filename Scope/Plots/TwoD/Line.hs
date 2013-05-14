@@ -49,9 +49,9 @@ filledLinePlot = mapPlot realToFrac (realToFrac *** realToFrac) filledLinePlotD
 filledLinePlotD :: (Renderable (Path R2) b) => Plot Double (Double,Double) (Diagram b R2)
 filledLinePlotD = Plot plotter emptyPlotInfo
     where
-        plotter xs = let lo = map p2 . map (second fst) $ V.toList xs
-                         hi = map p2 . map (second snd) $ V.toList xs
-                     in pathLikeFromTrail $ close $ fromVertices (lo ++ reverse hi)
+        plotter xs = let lo = map (p2 . second fst) $ V.toList xs
+                         hi = map (p2 . second snd) $ V.toList xs
+                     in stroke . close $ fromVertices (lo ++ reverse hi)
 
 minMeanMaxPlot
     :: (V.Unbox x, V.Unbox y, Real x, Real y, Renderable (Path R2) b)
