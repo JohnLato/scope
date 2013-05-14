@@ -86,6 +86,7 @@ module Scope.Types (
     , PlotInfo (..)
     , emptyPlot
     , mapPlot
+    , mapWithKey
     , emptyPlotInfo
     
     -- * Drawing commands
@@ -114,6 +115,7 @@ import Control.Applicative ((<$>))
 import Control.Arrow ((***))
 
 import Data.Data (Data, Typeable)
+import Data.List (foldl')
 import Data.Time.Clock
 
 import qualified Data.Vector.Unboxed as U
@@ -409,10 +411,18 @@ emptyPlotInfo = PlotInfo "" "" ""
 
 -- | A @Plot@ describes how to generate a diagram from a given data source.
 data Plot sourceX sourceY diag = Plot
-   { makePlot    :: U.Vector (sourceX,sourceY) -> diag
+   { makePlot    :: U.Vector (sourceX,sourceY) -> [(String, diag)]
    , plotInfo    :: PlotInfo
    }
    deriving (Eq, Functor)
+
+mapWithKey :: (String -> diag -> diag')
+           -> Plot sourceX sourceY diag
+           -> Plot sourceX sourceY diag'
+mapWithKey fn Plot {..} = Plot
+  { makePlot = map (\(s,d) -> (s, fn s d)) . makePlot
+  , plotInfo
+  }
 
 -- | An empty @Plot@.  Creates an empty diagram regardless of input.
 emptyPlot :: Monoid diag => Plot a b diag
@@ -516,12 +526,12 @@ mkRenderer2D sourceScaling Source{..} Plot{..} = do
         (xRngAbs, yRngAbs) <- sourceExtent
         let b2l r   = let (a,b) = toBounds r in [a,b]
             rngVec  = U.fromListN 2 $ zip (b2l xRngAbs) (b2l yRngAbs)
-            rngPlot = makePlot rngVec
+            rngPlot = foldl' D.atop mempty . map snd $ makePlot rngVec
             xReq = (uncurry lerp (toBounds xRngAbs) . unDataX) <$> xRng
 
         datavec <- mkSource hint xReq
 
-        let rawDiag    = makePlot datavec
+        let rawDiag    = foldl' D.atop mempty . map snd $ makePlot datavec
             paddedDiag = rawDiag D.# D.withEnvelope rngPlot
             scaleTo1 = D.scaleToX 1 . D.scaleToY 1
             (clipStart,clipRng) = (((origin .+^) . d2r) *** d2r)
@@ -585,7 +595,7 @@ mkRenderer proj sourceScaling Source{..} Plot{..} = do
                                                      ,max y1 (y <.> yProj))
                      in U.foldl' f (xh',xh',yh',yh') datavec
 
-        let rawDiag    = makePlot datavec
+        let rawDiag    = foldl' D.atop mempty . map snd $ makePlot datavec
             -- TODO: is it necessary to scale by the returned diagram size?
             -- maybe can just use the requested/received diffs as struts
             -- requires convention as to diagram size though.
@@ -606,7 +616,7 @@ mkRenderer proj sourceScaling Source{..} Plot{..} = do
 
             paddedDiag = ystrut yMaxDiff
                          ===
-                         (xstrut xMinDiff ||| makePlot datavec ||| xstrut xMaxDiff)
+                         (xstrut xMinDiff ||| (foldl' D.atop mempty . map snd $ makePlot datavec) ||| xstrut xMaxDiff)
                          ===
                          ystrut yMinDiff
             clipMin = D.p2 (xReqMin, yReqMin)

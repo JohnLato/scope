@@ -1,4 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE TupleSections #-}
 {-# OPTIONS -Wall #-}
 ----------------------------------------------------------------------
 {- |
@@ -23,6 +25,8 @@ module Scope.Plots.TwoD.Line (
 , filledLinePlotD
 
 , minMeanMaxPlot
+
+, PlotName (..)
 ) where
 
 import Scope.Types
@@ -30,6 +34,7 @@ import Diagrams.Prelude
 
 import qualified Data.Vector.Unboxed as V
 import Control.Arrow
+import Data.Typeable
 
 -- | A line plot for any @Real@ type.
 linePlot :: (V.Unbox x, V.Unbox y, Real x, Real y, Renderable (Path R2) b)
@@ -40,7 +45,7 @@ linePlot = mapPlot realToFrac realToFrac linePlotD
 linePlotD :: (Renderable (Path R2) b) => Plot Double Double (Diagram b R2)
 linePlotD = Plot plotter emptyPlotInfo
     where
-        plotter = fromVertices . map p2 . V.toList
+        plotter = (:[]) . ("line",) . fromVertices . map p2 . V.toList
 
 filledLinePlot :: (V.Unbox x, V.Unbox y, Real x, Real y, Renderable (Path R2) b)
          => Plot x (y,y) (Diagram b R2)
@@ -51,15 +56,22 @@ filledLinePlotD = Plot plotter emptyPlotInfo
     where
         plotter xs = let lo = map (p2 . second fst) $ V.toList xs
                          hi = map (p2 . second snd) $ V.toList xs
-                     in stroke . close $ fromVertices (lo ++ reverse hi)
+                     in (:[]) . ("fill",) . stroke . close $ fromVertices (lo ++ reverse hi)
 
+-- | Return a 'Plot' of the mean line with a min/max fill.  The interior
+-- diagrams are named "fill" and "line" so that transforms (e.g. coloring)
+-- can be applied separately using 'withName'.
 minMeanMaxPlot
     :: (V.Unbox x, V.Unbox y, Real x, Real y, Renderable (Path R2) b)
          => Plot x (y,y,y) (Diagram b R2)
 minMeanMaxPlot = Plot plotter emptyPlotInfo
     where
-        plot1 = makePlot $ mapPlot id (\(_,b,c) -> (b,c)) filledLinePlot
-        plot2 = makePlot $ mapPlot id (\(a,_,_) -> a) linePlot
+        plot1 = (makePlot $ mapPlot id (\(_,mn,_) -> mn) linePlot)
+        plot2 = (makePlot $ mapPlot id (\(a,_,c) -> (a,c)) filledLinePlot)
         -- probably need to strut these out.  Easier if we add them later,
         -- after the data's been normalized.
-        plotter = atop <$> plot1 <*> plot2
+        -- order matters!  we want the linePlot first so it goes on top.
+        plotter = (++) <$> plot1 <*> plot2
+
+data PlotName = Fill | Line deriving (Eq, Show, Ord, Typeable)
+instance IsName PlotName
