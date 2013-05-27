@@ -59,8 +59,8 @@ scopeBufSize = 1024
 
 type ScopeResult y = (y,y,y)
 
-makeResult :: ZoomNum t => Summary t -> (Double, t, t)
-makeResult x = let s = summaryData x in (numAvg s, numMin s, numMax s)
+makeResult :: ZoomNum t => Summary t -> (t, Double, t)
+makeResult x = let s = summaryData x in (numMin s, numAvg s, numMax s)
 
 addLayersFromFile :: (Backend b R2, Monoid' m)
                   => Plot TimeStamp (ScopeResult Double) (ScopeDiagram b m)
