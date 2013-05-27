@@ -53,13 +53,13 @@ import           Diagrams.Prelude (Backend, R2, Monoid')
 import           Data.ByteString (ByteString)
 import           Control.Applicative
 import           Control.Monad.CatchIO
-import Control.Monad.Trans
 
 scopeBufSize :: Int
 scopeBufSize = 1024
 
 type ScopeResult y = (y,y,y)
 
+makeResult :: ZoomNum t => Summary t -> (Double, t, t)
 makeResult x = let s = summaryData x in (numAvg s, numMin s, numMax s)
 
 addLayersFromFile :: (Backend b R2, Monoid' m)
@@ -88,9 +88,9 @@ mkScopeSourceProvider :: (y ~ Double)
                              -> Range TimeStamp
                              -> IO (U.Vector (TimeStamp, ScopeResult y)))
 mkScopeSourceProvider sf@ScopeFile{sfCache} _scaling =
-  return $ \hint range -> do
+  return $ \hint viewportal -> do
     let nSz = unHint hint
-        (minX,maxX) = toBounds range
+        (minX,maxX) = toBounds viewportal
         doInBounds iter = do
               seekTimeStamp sfCache (Just minX)
               I.dropWhileB (before (Just minX))
@@ -107,6 +107,7 @@ deriving instance U.Unbox TimeStamp
 deriving instance (B.Vector U.Vector TimeStamp)
 deriving instance (B.MVector U.MVector TimeStamp)
 
+fromJust :: Maybe a -> a
 fromJust = maybe (error "mkScopeSourceProvider: no timestamp") id
 
 scopeExtents
