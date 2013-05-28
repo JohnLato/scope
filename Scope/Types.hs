@@ -112,7 +112,7 @@ module Scope.Types (
 ) where
 
 import Control.Applicative ((<$>))
-import Control.Arrow ((***))
+import Control.Arrow ((***), second)
 
 import Data.Data (Data, Typeable)
 import Data.List (foldl')
@@ -334,13 +334,15 @@ restrictRange01 = maskRange $ fromBounds (fromDouble 0.0, fromDouble 1.0)
 
 -- | Translate the range by the given amount on the canvas,
 -- scaled by the given multiplier.
-zoomRange :: (AdditiveGroup t, VectorSpace (Diff t), AffineSpace t,
-              Coordinate t)
+zoomRange :: forall t. (AdditiveGroup t, HasBasis (Diff t), AffineSpace t,
+              Coordinate t, Scalar (Diff t) ~ Double)
           => CanvasX -> Scalar (Diff t) -> Range t -> Range t
 zoomRange (CanvasX focus) mult rng =
-        fromSpanC (start ^+^ fromDouble focus) (dist ^* mult)
+        fromSpanC (start .+^ off1) newW
     where
-        (start, dist) = toSpan rng
+        (start, oldW) = toSpan rng
+        off1 = (oldW ^-^ newW) ^* focus
+        newW = recompose . map (second (min 1)) $ decompose (oldW ^* mult)
 
 -- | A view into a full extent, as specified by 'Range ScreenX'.
 --
